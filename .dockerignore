@@ -1,0 +1,11 @@
+.git
+.github
+node_modules
+.env
+.env.*
+data
+test
+*.sqlite*
+*.log
+
+monitor-backup*.tar.gz
