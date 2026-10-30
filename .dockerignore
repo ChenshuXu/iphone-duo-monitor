@@ -8,4 +8,9 @@ test
 *.sqlite*
 *.log
 
-monitor-backup*.tar.gz
+monitor-backup*
+
+local/
+AGENTS.md
+
+compose.override.yaml

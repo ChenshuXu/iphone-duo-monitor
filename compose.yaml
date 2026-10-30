@@ -16,12 +16,14 @@ services:
       - seccomp=./seccomp_profile.json
     environment:
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8088}
+      BARK_KEY: ${BARK_KEY:-}
+      GRAFANA_IRM_WEBHOOK: ${GRAFANA_IRM_WEBHOOK:-}
       GRAFANA_IRM_HOST: ${GRAFANA_IRM_HOST:-}
       DATA_DIR: /data
     ports:
       - '${BIND_ADDRESS:-127.0.0.1}:${PORT:-8088}:8080'
     volumes:
-      - monitor-data:/data
+      - '${DATA_VOLUME:-monitor-data}:/data'
     healthcheck:
       test: [CMD, node, -e, "require('node:http').get('http://127.0.0.1:8080/api/status', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 30s

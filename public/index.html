@@ -1,22 +1,305 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>iPhone Duo · 取货监控</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head><body>
-<div class="shell"><header><a class="wordmark" href="/">Duo <span>／ Pickup Watch</span></a><div class="header-right"><span id="connection" class="muted" role="status">正在连接</span></div></header>
-<main><section class="hero"><div><div class="eyebrow">APPLE STORE / US PICKUP</div><h1>iPhone Duo<span class="star">✳</span></h1><p id="product-name" class="muted">正在读取商品…</p><a id="product-link" target="_blank" rel="noopener" class="text-link">查看购买页面 ↗</a></div><div class="hero-state"><div id="phase" class="phase">正在读取状态</div><div id="countdown" class="countdown">—</div><div id="next-label" class="muted">下一次查询</div></div></section>
-<section class="overview"><div><span class="muted">上次尝试</span><strong id="last-attempt">尚未查询</strong></div><div><span class="muted">最近完整成功</span><strong id="last-success">尚未成功</strong></div><div><span class="muted">当前目标</span><strong id="target">—</strong></div><div class="actions"><button id="toggle" class="primary" disabled>加载中</button><button id="query" disabled>请求查询</button></div></section>
-<div class="section-title"><h2>附近门店</h2><span class="muted" id="inventory-note">库存按监控周期更新</span></div><section id="stores" class="stores" aria-live="polite"></section>
-<section class="history" aria-labelledby="history-heading"><div class="section-title"><h2 id="history-heading">查询历史</h2><span class="muted">保留最近 60 天 · 自动更新</span></div>
-<p id="history-coverage" class="fine">正在读取历史记录…</p>
-<div class="history-stats"><div><span>查询轮次</span><strong id="history-total">—</strong></div><div><span>出现有货的轮次</span><strong id="history-available">—</strong></div><div><span>失败或结果不完整</span><strong id="history-unknown">—</strong></div></div>
-<p class="fine">汇总按时间范围和门店统计，时间使用浏览器所在时区。有货次数按查询快照计数，不代表持续有货时长。</p>
-<div class="history-toolbar"><div class="history-tabs" role="group" aria-label="历史视图"><button id="history-all" class="primary" aria-pressed="true">全部查询</button><button id="history-stock" aria-pressed="false">曾经有货</button></div><div class="history-filters"><label>时间范围<select id="history-days"><option value="60">最近 60 天</option><option value="30">最近 30 天</option><option value="7">最近 7 天</option><option value="1">最近 24 小时</option></select></label><label>门店<select id="history-store"><option value="">所有门店</option></select></label><label>查询结果<select id="history-outcome"><option value="">全部结果</option><option value="complete">结果完整</option><option value="partial">部分未知</option><option value="failed">查询失败</option><option value="interrupted">查询中断</option><option value="checking">查询中</option></select></label><button id="history-refresh">刷新记录</button></div></div>
-<div id="history-stock-summary" class="stock-history"></div><p id="history-message" class="fine" role="status"></p><div id="history-list" class="query-list" role="region" aria-label="查询记录列表" tabindex="0"></div>
-<div class="history-pagination"><button id="history-prev" disabled>上一页</button><span id="history-page" class="fine">每页 50 轮</span><button id="history-next" disabled>下一页</button></div></section>
-<section class="channels"><article><div class="channel-heading"><h2>Bark <small>购买链接</small></h2><span id="bark-state" class="badge">—</span></div><p>每轮明确有货时，按门店发送普通通知。</p><p id="bark-at" class="fine">尚未发送</p><button id="test-bark">发送一次通知测试</button></article><article><div class="channel-heading"><h2>Grafana IRM <small>电话</small></h2><span id="irm-state" class="badge">待配置</span></div><p id="irm-description">电话状态正在载入。</p><p id="irm-at" class="fine">电话尚未启用</p><button id="test-irm" disabled>拨打一通测试电话</button></article></section>
-<div class="lower"><section class="settings"><div class="section-title"><h2>监控设置</h2><span id="version" class="muted">—</span></div><p class="fine">新设置在轮次边界生效。选择商品与邮编后，读取附近门店，再勾选至少一家。更换目标前请先暂停监控。</p>
-<form id="settings"><label>美国邮编<input name="zip" pattern="[0-9]{5}" maxlength="5" inputmode="numeric" required></label><div class="two"><label>颜色<select name="color" required></select></label><label>容量<select name="capacity" required></select></label><label>运营商<select name="carrier" required></select></label></div><button id="discover" type="button">读取附近门店</button><p id="discover-message" class="fine" role="status">请填写邮编并选择商品，再读取门店。</p><fieldset><legend>监控门店</legend><div id="store-options" class="checks"></div></fieldset>
-<div class="two"><label>正常最短等待（秒）<input name="normalMin" type="number" min="60.001" max="179.999" step="0.001" required></label><label>正常最长等待（秒）<input name="normalMax" type="number" min="60.001" max="179.999" step="0.001" required></label><label>异常最短等待（秒）<input name="retryMin" type="number" min="180.001" max="599.999" step="0.001" required></label><label>异常最长等待（秒）<input name="retryMax" type="number" min="180.001" max="599.999" step="0.001" required></label></div>
-<p class="fine">随机到毫秒并排除整秒。请求查询不会跳过等待或服务端限流。</p>
-<fieldset><legend>Bark 普通通知</legend><label class="check"><input name="barkEnabled" type="checkbox">启用 Bark</label><label>替换设备 key（留空保留）<input name="barkKey" type="password" autocomplete="new-password" maxlength="256"></label><label class="check"><input name="clear_barkKey" type="checkbox">清除已存 key（须先停用）</label><div class="two"><label>分组<input name="barkGroup" maxlength="64" required></label><label>历史保留（秒）<input name="barkTtl" type="number" min="1" max="86400" required></label></div></fieldset>
-<fieldset><legend>Grafana IRM 电话</legend><p id="irm-help" class="fine">等待配置后启用。</p><label class="check"><input name="irmEnabled" type="checkbox" disabled>启用电话</label><label>替换专用 Webhook（留空保留）<input name="irmWebhook" type="password" autocomplete="new-password" disabled></label><label class="check"><input name="clear_irmWebhook" type="checkbox" disabled>清除已存 Webhook（须先停用）</label></fieldset>
-<div class="actions"><button type="submit" class="primary">保存设置</button><button id="reload-settings" type="button">重新载入</button></div><p id="save-message" class="fine" role="status">首次保存即确认选定门店；恢复监控是独立操作。</p></form></section>
-<section class="events"><div class="section-title"><h2>最近事件</h2><span class="muted">最多 200 条</span></div><ol id="events"></ol></section></div><p id="operation-message" class="toast" role="status" hidden></p>
-<footer>Docker 独立运行 · 时间使用浏览器所在时区 · 库存不保证保留，购买后请暂停监控。</footer></main></div></body></html>
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>iPhone Duo · 取货监控</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/i18n.js" defer></script>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <a class="wordmark" href="/">
+          Duo
+          <span>／ Pickup Watch</span>
+        </a>
+        <div class="header-right">
+          <span id="connection" class="muted" role="status">正在连接</span>
+          <select id="language" class="language-select" aria-label="语言" translate="no">
+            <option value="zh-CN">中文</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </header>
+      <main>
+        <section class="hero">
+          <div>
+            <div class="eyebrow">APPLE STORE / US PICKUP</div>
+            <h1>
+              iPhone Duo
+              <span class="star">✳</span>
+            </h1>
+            <p id="product-name" class="muted">正在读取商品…</p>
+            <a id="product-link" target="_blank" rel="noopener" class="text-link">
+              查看购买页面 ↗
+            </a>
+          </div>
+          <div class="hero-state">
+            <div id="phase" class="phase">正在读取状态</div>
+            <div id="countdown" class="countdown">—</div>
+            <div id="next-label" class="muted">下一次查询</div>
+          </div>
+        </section>
+
+        <section class="overview">
+          <div>
+            <span class="muted">上次尝试</span>
+            <strong id="last-attempt">尚未查询</strong>
+          </div>
+          <div>
+            <span class="muted">最近完整成功</span>
+            <strong id="last-success">尚未成功</strong>
+          </div>
+          <div>
+            <span class="muted">当前目标</span>
+            <strong id="target">—</strong>
+          </div>
+          <div class="actions">
+            <button id="toggle" class="primary" disabled>加载中</button>
+            <button id="query" disabled>请求查询</button>
+          </div>
+        </section>
+        <div class="section-title">
+          <h2>附近门店</h2>
+          <span class="muted" id="inventory-note">库存按监控周期更新</span>
+        </div>
+
+        <section id="stores" class="stores" aria-live="polite"></section>
+
+        <section class="history" aria-labelledby="history-heading">
+          <div class="section-title">
+            <h2 id="history-heading">查询历史</h2>
+            <span class="muted">保留最近 60 天 · 自动更新</span>
+          </div>
+          <p id="history-coverage" class="fine">正在读取历史记录…</p>
+          <div class="history-stats">
+            <div>
+              <span>查询轮次</span>
+              <strong id="history-total">—</strong>
+            </div>
+            <div>
+              <span>出现有货的轮次</span>
+              <strong id="history-available">—</strong>
+            </div>
+            <div>
+              <span>失败或结果不完整</span>
+              <strong id="history-unknown">—</strong>
+            </div>
+          </div>
+          <p class="fine">
+            按所选时间范围和门店汇总，有货次数按查询快照计数。时间使用浏览器所在时区。
+          </p>
+          <div class="history-toolbar">
+            <div class="history-tabs" role="group" aria-label="历史视图">
+              <button id="history-all" class="primary" aria-pressed="true">全部查询</button>
+              <button id="history-stock" aria-pressed="false">曾经有货</button>
+            </div>
+            <div class="history-filters">
+              <label>
+                时间范围
+                <select id="history-days">
+                  <option value="60">最近 60 天</option>
+                  <option value="30">最近 30 天</option>
+                  <option value="7">最近 7 天</option>
+                  <option value="1">最近 24 小时</option>
+                </select>
+              </label>
+              <label>
+                门店
+                <select id="history-store">
+                  <option value="">所有门店</option>
+                </select>
+              </label>
+              <label>
+                查询结果
+                <select id="history-outcome">
+                  <option value="">全部结果</option>
+                  <option value="complete">结果完整</option>
+                  <option value="partial">部分未知</option>
+                  <option value="failed">查询失败</option>
+                  <option value="interrupted">查询中断</option>
+                  <option value="checking">查询中</option>
+                </select>
+              </label>
+              <button id="history-refresh">刷新记录</button>
+            </div>
+          </div>
+          <div id="history-stock-summary" class="stock-history"></div>
+          <p id="history-message" class="fine" role="status"></p>
+          <div
+            id="history-list"
+            class="query-list"
+            role="region"
+            aria-label="查询记录列表"
+            tabindex="0"
+          ></div>
+          <div class="history-pagination">
+            <button id="history-prev" disabled>上一页</button>
+            <span id="history-page" class="fine">每页 50 轮</span>
+            <button id="history-next" disabled>下一页</button>
+          </div>
+        </section>
+
+        <section class="channels">
+          <article>
+            <div class="channel-heading">
+              <h2>
+                Bark
+                <small>购买链接</small>
+              </h2>
+              <span id="bark-state" class="badge">—</span>
+            </div>
+            <p>每轮明确有货时，按门店发送普通通知。</p>
+            <p id="bark-at" class="fine">尚未发送</p>
+            <button id="test-bark">发送一次通知测试</button>
+          </article>
+          <article>
+            <div class="channel-heading">
+              <h2>
+                Grafana IRM
+                <small>电话</small>
+              </h2>
+              <span id="irm-state" class="badge">待配置</span>
+            </div>
+            <p id="irm-description">电话状态正在载入。</p>
+            <p id="irm-at" class="fine">电话尚未启用</p>
+            <button id="test-irm" disabled>拨打一通测试电话</button>
+            <button id="cleanup-irm" disabled>清理电话分组</button>
+          </article>
+        </section>
+
+        <div class="lower">
+          <section class="settings">
+            <div class="section-title">
+              <h2>监控设置</h2>
+              <span id="version" class="muted">—</span>
+            </div>
+            <p class="fine">
+              新设置在轮次边界生效。选择商品与邮编后，读取附近门店，再勾选至少一家。更换目标前请先暂停监控。
+            </p>
+            <form id="settings">
+              <label>
+                美国邮编
+                <input name="zip" pattern="[0-9]{5}" maxlength="5" inputmode="numeric" required />
+              </label>
+              <div class="two">
+                <label>
+                  颜色
+                  <select name="color" required></select>
+                </label>
+                <label>
+                  容量
+                  <select name="capacity" required></select>
+                </label>
+                <label>
+                  运营商
+                  <select name="carrier" required></select>
+                </label>
+              </div>
+              <button id="discover" type="button">读取附近门店</button>
+              <p id="discover-message" class="fine" role="status">
+                请填写邮编并选择商品，再读取门店。
+              </p>
+              <fieldset>
+                <legend>监控门店</legend>
+                <div id="store-options" class="checks"></div>
+              </fieldset>
+              <div class="two">
+                <label>
+                  正常最短等待（秒）
+                  <input
+                    name="normalMin"
+                    type="number"
+                    min="60.001"
+                    max="179.999"
+                    step="0.001"
+                    required
+                  />
+                </label>
+                <label>
+                  正常最长等待（秒）
+                  <input
+                    name="normalMax"
+                    type="number"
+                    min="60.001"
+                    max="179.999"
+                    step="0.001"
+                    required
+                  />
+                </label>
+                <label>
+                  异常最短等待（秒）
+                  <input
+                    name="retryMin"
+                    type="number"
+                    min="180.001"
+                    max="599.999"
+                    step="0.001"
+                    required
+                  />
+                </label>
+                <label>
+                  异常最长等待（秒）
+                  <input
+                    name="retryMax"
+                    type="number"
+                    min="180.001"
+                    max="599.999"
+                    step="0.001"
+                    required
+                  />
+                </label>
+              </div>
+              <p class="fine">随机到毫秒并排除整秒。请求查询按最短间隔与服务端限流排期。</p>
+              <fieldset>
+                <legend>Bark 普通通知</legend>
+                <label class="check">
+                  <input name="barkEnabled" type="checkbox" />
+                  启用 Bark
+                </label>
+                <p id="bark-help" class="fine">从 .env 读取 BARK_KEY。</p>
+                <div class="two">
+                  <label>
+                    分组
+                    <input name="barkGroup" maxlength="64" required />
+                  </label>
+                  <label>
+                    历史保留（秒）
+                    <input name="barkTtl" type="number" min="1" max="86400" required />
+                  </label>
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>Grafana IRM 电话</legend>
+                <p id="irm-help" class="fine">等待配置后启用。</p>
+                <label class="check">
+                  <input name="irmEnabled" type="checkbox" disabled />
+                  启用电话
+                </label>
+              </fieldset>
+              <div class="actions">
+                <button type="submit" class="primary">保存设置</button>
+                <button id="reload-settings" type="button">重新载入</button>
+              </div>
+              <p id="save-message" class="fine" role="status">
+                首次保存即确认选定门店；恢复监控是独立操作。
+              </p>
+            </form>
+          </section>
+
+          <section class="events">
+            <div class="section-title">
+              <h2>最近事件</h2>
+              <span class="muted">最多 200 条</span>
+            </div>
+            <ol id="events"></ol>
+          </section>
+        </div>
+        <p id="operation-message" class="toast" role="status" hidden></p>
+        <footer>Docker 独立运行 · 时间使用浏览器所在时区 · 购买后请暂停监控。</footer>
+      </main>
+    </div>
+  </body>
+</html>

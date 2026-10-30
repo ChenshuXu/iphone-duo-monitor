@@ -4,7 +4,9 @@
   "private": false,
   "scripts": {
     "start": "node server.cjs",
-    "test": "node --test test/*.test.cjs"
+    "test": "node --test test/*.test.cjs",
+    "format": "prettier --write \"*.cjs\" \"public/*.{js,css,html}\" \"test/*.cjs\" package.json .prettierrc.json",
+    "format:check": "prettier --check \"*.cjs\" \"public/*.{js,css,html}\" \"test/*.cjs\" package.json .prettierrc.json"
   },
   "dependencies": {
     "playwright": "1.64.0"
@@ -16,5 +18,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/ChenshuXu/iphone-duo-monitor.git"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2"
   }
 }

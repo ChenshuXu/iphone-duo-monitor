@@ -7,4 +7,8 @@ data/
 *.log
 .DS_Store
 
-monitor-backup*.tar.gz
+monitor-backup*
+
+local/
+
+compose.override.yaml
