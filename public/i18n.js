@@ -295,6 +295,7 @@
     定位并点击取货入口: 'Find and click pickup entry',
     等待取货弹窗可见: 'Wait for pickup dialog',
     等待取货初始结果: 'Wait for initial pickup results',
+    重新打开取货弹窗: 'Reopen pickup dialog',
     等待商品页面就绪: 'Wait for product page',
     '重新选择商品选项：{option}': 'Reselect product option: {option}',
     核对商品标题: 'Verify product title',

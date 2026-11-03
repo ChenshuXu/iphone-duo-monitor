@@ -64,6 +64,11 @@ const DAY = 86400000;
 const BARK_RETRY_DELAY = 10000;
 const BARK_STOCK_RETRIES = 2;
 
+// Bark forwards this ID as the APNs collapse ID, which is limited to 64 bytes.
+function barkId(scope, round) {
+  return `${scope}-${round}`;
+}
+
 function fail(message, status = 400) {
   throw Object.assign(new Error(message), { status });
 }
@@ -208,7 +213,11 @@ async function post(url, payload, channel) {
   });
   const retryAt = retryAfter(res.headers.get('retry-after'));
   if (!res.ok) {
-    throw Object.assign(new Error(), { safeMessage: `HTTP ${res.status}`, retryAt });
+    throw Object.assign(new Error(), {
+      safeMessage: `HTTP ${res.status}`,
+      status: res.status,
+      retryAt,
+    });
   }
   let body;
   try {
@@ -776,7 +785,7 @@ class Monitor {
           }
           await this.bark(
             {
-              id: `test-${randomUUID()}`,
+              id: barkId('test', randomUUID()),
               title: 'iPhone Duo 测试通知',
               body: '这是一条 Bark 测试通知，附有所选商品的购买链接。',
             },
@@ -874,7 +883,8 @@ class Monitor {
         'bark',
       );
     } catch (e) {
-      r.bark.notBefore = Math.max(e.retryAt || 0, Date.now() + BARK_RETRY_DELAY);
+      const delay = e.status === 429 ? randomDelay(c.retryMin, c.retryMax) : BARK_RETRY_DELAY;
+      r.bark.notBefore = Math.max(e.retryAt || 0, Date.now() + delay);
       r.bark.state = 'cooldown';
       this.event(
         'error',
@@ -907,7 +917,14 @@ class Monitor {
   scheduleBarkRetry(version, retries) {
     const r = this.v.runtime;
     const wait = (r.bark.notBefore || 0) - Date.now();
-    if (!retries || !r.bark.pending.length || wait > BARK_RETRY_DELAY) {
+    if (
+      !retries ||
+      r.paused ||
+      this.stopping ||
+      version !== this.v.config.version ||
+      !r.bark.pending.length ||
+      wait > BARK_RETRY_DELAY
+    ) {
       return;
     }
     const retry = async () => {
@@ -1122,8 +1139,7 @@ class Monitor {
       const available = r.stores.filter((s) => s.status === 'available');
       if (!r.paused && this.v.config.barkEnabled) {
         r.bark.pending = available.map((s) => ({
-          // Bark forwards this as the APNs collapse ID, which is limited to 64 bytes.
-          id: `${s.id}-${round}`,
+          id: barkId(s.id, round),
           title: `iPhone Duo · ${s.name}`,
           body: `${productFor(c).name}\n${s.name}\n${s.description}\nZIP ${c.zip}\n检查：${new Date(s.checkedAt).toISOString()}`,
         }));

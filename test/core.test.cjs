@@ -229,9 +229,73 @@ test('stock Bark ids stay within the 64-byte APNs collapse ID limit for every pr
       }
     }
   }
-  assert.ok(sent.length >= 32);
+  await m.control('test-bark');
+  assert.ok(sent.length >= 33);
   assert.ok(sent.every((p) => Buffer.byteLength(p.id) <= 64));
   assert.equal(new Set(sent.map((p) => p.id)).size, sent.length);
+});
+
+test('Bark HTTP 429 without Retry-After backs off and skips same-round retries', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+  const sent = [];
+  const { m } = fixture(
+    t,
+    async (c) => ({
+      stores: c.stores.map((id) => ({
+        id,
+        name: STORES[id],
+        status: 'available',
+        checkedAt: Date.now(),
+      })),
+    }),
+    async (url, payload) => {
+      sent.push(payload);
+      throw { safeMessage: 'HTTP 429', status: 429, retryAt: 0 };
+    },
+  );
+  ready(m);
+  const start = Date.now();
+  await m.run();
+  assert.ok(m.v.runtime.bark.notBefore >= start + m.v.config.retryMin);
+  t.mock.timers.tick(30000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent.length, 1);
+});
+
+test('a Bark retry finishing during shutdown does not arm another retry', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+  let attempts = 0;
+  let finish;
+  const { m } = fixture(
+    t,
+    async (c) => ({
+      stores: c.stores.map((id) => ({
+        id,
+        name: STORES[id],
+        status: id === 'R001' ? 'available' : 'unavailable',
+        checkedAt: Date.now(),
+      })),
+    }),
+    async () => {
+      attempts++;
+      if (attempts === 1) {
+        throw { safeMessage: 'HTTP 500' };
+      }
+      await new Promise((resolve) => (finish = resolve));
+      throw { safeMessage: 'HTTP 500' };
+    },
+  );
+  ready(m);
+  await m.run();
+  t.mock.timers.tick(10001);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(attempts, 2);
+  const timer = m.barkRetryTimer;
+  const stopped = m.stop();
+  finish();
+  await stopped;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(m.barkRetryTimer, timer);
 });
 
 test('failed stock Bark retries in its round with the same id, then stops', async (t) => {
@@ -833,7 +897,10 @@ test('notification adapter accepts Grafana JSON string Ok. and Bark code 200, re
   response = new Response('unavailable', { status: 429, headers: { 'retry-after': '600' } });
   await assert.rejects(
     post('https://example.grafana.net/webhook', {}, 'irm'),
-    (error) => error.safeMessage === 'HTTP 429' && error.retryAt >= Date.now() + 599000,
+    (error) =>
+      error.safeMessage === 'HTTP 429' &&
+      error.status === 429 &&
+      error.retryAt >= Date.now() + 599000,
   );
 });
 

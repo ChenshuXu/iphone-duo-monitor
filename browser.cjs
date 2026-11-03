@@ -92,13 +92,14 @@ async function waitForInitialResults(dialog, progress, timeout) {
   await dialog.locator('input[name="search"]').waitFor({ state: 'visible', timeout });
 }
 
-async function openPickupDialog(page, progress, timeout = INITIAL_RESULT_TIMEOUT) {
+async function openPickupDialog(page, progress, timeout = INITIAL_RESULT_TIMEOUT, network = {}) {
   const dialog = await clickPickupEntry(page, progress);
   try {
     await waitForInitialResults(dialog, progress, timeout);
     return dialog;
   } catch (e) {
-    if (e.name !== 'TimeoutError') {
+    // After an Apple HTTP error, reopening would request inventory again before Retry-After.
+    if (e.name !== 'TimeoutError' || network.httpError) {
       throw e;
     }
   }
@@ -106,7 +107,7 @@ async function openPickupDialog(page, progress, timeout = INITIAL_RESULT_TIMEOUT
   // Apple occasionally opens an empty dialog that never loads; reopening starts it again.
   progress('重新打开取货弹窗');
   await page.keyboard.press('Escape');
-  await dialog.waitFor({ state: 'hidden' });
+  await dialog.waitFor({ state: 'hidden', timeout });
   await clickPickupEntry(page, progress);
   await waitForInitialResults(dialog, progress, timeout);
   return dialog;
@@ -289,7 +290,7 @@ class AppleBrowser {
         });
       }
       await prepareProductPage(page, config, progress);
-      const dialog = await openPickupDialog(page, progress);
+      const dialog = await openPickupDialog(page, progress, INITIAL_RESULT_TIMEOUT, network);
       const part = (
         await dialog.locator('input[name^="store-"]').first().getAttribute('name')
       ).slice(6);

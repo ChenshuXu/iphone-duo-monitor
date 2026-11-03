@@ -146,6 +146,14 @@ test(
     );
     assert.equal(step, '等待取货初始结果');
     assert.equal(await page.evaluate(() => window.opens), 2);
+
+    await page.setContent(entry + script(2));
+    await assert.rejects(
+      openPickupDialog(page, (s) => (step = s), 200, { httpError: { safeMessage: 'HTTP 429' } }),
+      { name: 'TimeoutError' },
+    );
+    assert.equal(step, '等待取货初始结果');
+    assert.equal(await page.evaluate(() => window.opens), 1);
   },
 );
 
