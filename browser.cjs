@@ -5,6 +5,8 @@ const { spawn } = require('node:child_process');
 const { chromium } = require('playwright');
 const { productFor, COLORS, inventoryStores, parseInventory, retryAfter } = require('./core.cjs');
 
+const INITIAL_RESULT_TIMEOUT = 15000;
+
 function networkURL(raw) {
   const u = new URL(raw);
   return /^https?:$/.test(u.protocol) &&
@@ -68,7 +70,7 @@ function watchNetwork(page, currentStep) {
   return log;
 }
 
-async function openPickupDialog(page, progress) {
+async function clickPickupEntry(page, progress) {
   progress('定位并点击取货入口');
   // The sticky header has an offscreen duplicate that still matches Playwright's :visible.
   await page
@@ -80,10 +82,33 @@ async function openPickupDialog(page, progress) {
   const dialog = page.getByRole('dialog', { name: 'iPhone Availability' });
   progress('等待取货弹窗可见');
   await dialog.waitFor({ state: 'visible' });
+  return dialog;
+}
+
+async function waitForInitialResults(dialog, progress, timeout) {
   progress('等待取货初始结果');
   // Initial results also finish Apple's ZIP prefill; typing earlier can concatenate two ZIPs.
-  await dialog.locator('input[name^="store-"]').first().waitFor({ state: 'attached' });
-  await dialog.locator('input[name="search"]').waitFor({ state: 'visible' });
+  await dialog.locator('input[name^="store-"]').first().waitFor({ state: 'attached', timeout });
+  await dialog.locator('input[name="search"]').waitFor({ state: 'visible', timeout });
+}
+
+async function openPickupDialog(page, progress, timeout = INITIAL_RESULT_TIMEOUT) {
+  const dialog = await clickPickupEntry(page, progress);
+  try {
+    await waitForInitialResults(dialog, progress, timeout);
+    return dialog;
+  } catch (e) {
+    if (e.name !== 'TimeoutError') {
+      throw e;
+    }
+  }
+
+  // Apple occasionally opens an empty dialog that never loads; reopening starts it again.
+  progress('重新打开取货弹窗');
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'hidden' });
+  await clickPickupEntry(page, progress);
+  await waitForInitialResults(dialog, progress, timeout);
   return dialog;
 }
 

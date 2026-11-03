@@ -25,7 +25,9 @@ The request uses ordinary `level=active` notifications with the purchase URL. So
 
 Automatic operation sends one notification per explicitly available store per round. Continuing stock produces repeated reminders. Unknown stores in failed rounds receive no stock alert. Messages include the product, store, check time, and purchase link. A running host with prolonged collection failures can send fault / recovery notices; a fully offline host cannot notify itself.
 
-Failed Bark requests cause an independent cooldown of 180.001 to 599.999 seconds, or until a longer `Retry-After` deadline. The dashboard shows the deadline. Remaining stores in the round, fault notices, and manual tests honor it. Restarts and channel switches retain cooldown. Queries and phone calls continue independently; after cooldown, notifications use fresh results rather than replaying old stock.
+Failed Bark requests cause an independent 10-second cooldown, or until a longer `Retry-After` deadline. This deadline is separate from the inventory query error retry interval. The dashboard shows the deadline. Remaining stores in the round, fault notices, and manual tests honor it. Restarts and channel switches retain cooldown. Queries and phone calls continue independently. When a stock alert fails and the cooldown is 10 seconds or less, the round retries up to twice with the same notification ID after each cooldown; a longer `Retry-After` waits for the next round. Once the next round starts, notifications use fresh results rather than replaying old stock.
+
+Bark forwards the notification `id` as the APNs collapse ID, which is limited to 64 bytes. APNs rejects longer values and Bark returns HTTP 500. Stock alerts use `store number-round UUID`, 41 bytes in total.
 
 To change a key, edit `BARK_KEY` in `.env` and run `docker compose up -d`. To remove it, leave the variable empty and recreate the container; the channel disables automatically. Back up `.env` securely and separately from the data volume. If a key leaks, replace it in Bark and update `.env`.
 

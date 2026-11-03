@@ -61,6 +61,8 @@ function validateTarget(c) {
 
 const HISTORY_DAYS = 60;
 const DAY = 86400000;
+const BARK_RETRY_DELAY = 10000;
+const BARK_STOCK_RETRIES = 2;
 
 function fail(message, status = 400) {
   throw Object.assign(new Error(message), { status });
@@ -611,6 +613,7 @@ class Monitor {
     this.busy = false;
     this.testing = false;
     this.timer = null;
+    this.barkRetryTimer = null;
     this.stopping = false;
     // Tests, stock alerts and cleanup share queues; internal failures propagate to callers.
     this.barkQueue = Promise.resolve();
@@ -871,7 +874,7 @@ class Monitor {
         'bark',
       );
     } catch (e) {
-      r.bark.notBefore = Math.max(e.retryAt || 0, Date.now() + randomDelay(c.retryMin, c.retryMax));
+      r.bark.notBefore = Math.max(e.retryAt || 0, Date.now() + BARK_RETRY_DELAY);
       r.bark.state = 'cooldown';
       this.event(
         'error',
@@ -885,6 +888,36 @@ class Monitor {
     this.event('bark', `${test ? '测试通知' : message.title}：Bark 服务已接受。`);
     this.publish();
     return true;
+  }
+
+  async sendPendingBark(version) {
+    const r = this.v.runtime;
+    for (const message of [...r.bark.pending]) {
+      if (r.paused || this.stopping || version !== this.v.config.version) {
+        break;
+      }
+      if (await this.bark(message, { activeOnly: true })) {
+        r.bark.pending = r.bark.pending.filter((m) => m.id !== message.id);
+        this.publish();
+      }
+    }
+  }
+
+  // Stock usually disappears before the next round, so a failed alert retries within its round.
+  scheduleBarkRetry(version, retries) {
+    const r = this.v.runtime;
+    const wait = (r.bark.notBefore || 0) - Date.now();
+    if (!retries || !r.bark.pending.length || wait > BARK_RETRY_DELAY) {
+      return;
+    }
+    const retry = async () => {
+      await this.sendPendingBark(version);
+      this.scheduleBarkRetry(version, retries - 1);
+    };
+    this.barkRetryTimer = setTimeout(
+      () => retry().catch((e) => this.fatal(e)),
+      Math.max(wait, 0) + 1,
+    );
   }
 
   async sendFault() {
@@ -995,6 +1028,7 @@ class Monitor {
     }
     this.busy = true;
     clearTimeout(this.timer);
+    clearTimeout(this.barkRetryTimer);
     const c = structuredClone(this.v.config);
     const round = randomUUID();
     const checkedAt = Date.now();
@@ -1088,22 +1122,16 @@ class Monitor {
       const available = r.stores.filter((s) => s.status === 'available');
       if (!r.paused && this.v.config.barkEnabled) {
         r.bark.pending = available.map((s) => ({
-          id: `${c.color}-${c.capacity}-${c.carrier}-${s.id}-${round}`,
+          // Bark forwards this as the APNs collapse ID, which is limited to 64 bytes.
+          id: `${s.id}-${round}`,
           title: `iPhone Duo · ${s.name}`,
           body: `${productFor(c).name}\n${s.name}\n${s.description}\nZIP ${c.zip}\n检查：${new Date(s.checkedAt).toISOString()}`,
         }));
       }
       this.publish();
       await this.sendFault();
-      for (const message of [...r.bark.pending]) {
-        if (r.paused || this.stopping || c.version !== this.v.config.version) {
-          break;
-        }
-        if (await this.bark(message, { activeOnly: true })) {
-          r.bark.pending = r.bark.pending.filter((m) => m.id !== message.id);
-          this.publish();
-        }
-      }
+      await this.sendPendingBark(c.version);
+      this.scheduleBarkRetry(c.version, BARK_STOCK_RETRIES);
       if (!r.paused && !this.stopping && c.version === this.v.config.version && available.length) {
         await this.submitIrm(
           round,
@@ -1126,6 +1154,7 @@ class Monitor {
   async stop() {
     this.stopping = true;
     clearTimeout(this.timer);
+    clearTimeout(this.barkRetryTimer);
     await this.cleanupIrm();
     await this.barkQueue;
   }
