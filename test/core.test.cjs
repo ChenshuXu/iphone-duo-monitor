@@ -10,6 +10,9 @@ const {
   validateSecrets,
   randomDelay,
   retryAfter,
+  COLORS,
+  CAPACITIES,
+  CARRIERS,
 } = require('../core.cjs');
 const { CONFIG: DEFAULTS, PRODUCT, STORES, parseInventory } = require('./fixture.cjs');
 const secrets = { barkKey: 'fake_key_for_test', irmWebhook: '' };
@@ -33,6 +36,7 @@ function fixture(t, collect, post = async () => {}, credentials = secrets) {
   );
   t.after(() => {
     clearTimeout(m.timer);
+    clearTimeout(m.barkRetryTimer);
     store.close();
     fs.rmSync(dir, { recursive: true });
   });
@@ -202,6 +206,173 @@ test('persistent available stock generates a new Bark id each round and only sel
   assert.equal(sent[0].device_key, secrets.barkKey);
   assert.ok(m.v.runtime.lastComplete);
 });
+test('stock Bark ids stay within the 64-byte APNs collapse ID limit for every product', async (t) => {
+  const sent = [];
+  const { m } = fixture(
+    t,
+    async (c) => ({
+      stores: c.stores.map((id) => ({
+        id,
+        name: STORES[id],
+        status: 'available',
+        description: 'Today',
+        checkedAt: Date.now(),
+      })),
+    }),
+    async (url, payload) => sent.push(payload),
+  );
+  for (const color of Object.keys(COLORS)) {
+    for (const capacity of Object.keys(CAPACITIES)) {
+      for (const carrier of Object.keys(CARRIERS)) {
+        ready(m, { color, capacity, carrier, version: m.v.config.version });
+        await m.run();
+      }
+    }
+  }
+  await m.control('test-bark');
+  assert.ok(sent.length >= 33);
+  assert.ok(sent.every((p) => Buffer.byteLength(p.id) <= 64));
+  assert.equal(new Set(sent.map((p) => p.id)).size, sent.length);
+});
+
+test('Bark HTTP 429 without Retry-After backs off and skips same-round retries', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+  const sent = [];
+  const { m } = fixture(
+    t,
+    async (c) => ({
+      stores: c.stores.map((id) => ({
+        id,
+        name: STORES[id],
+        status: 'available',
+        checkedAt: Date.now(),
+      })),
+    }),
+    async (url, payload) => {
+      sent.push(payload);
+      throw { safeMessage: 'HTTP 429', status: 429, retryAt: 0 };
+    },
+  );
+  ready(m);
+  const start = Date.now();
+  await m.run();
+  assert.ok(m.v.runtime.bark.notBefore >= start + m.v.config.retryMin);
+  t.mock.timers.tick(30000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent.length, 1);
+});
+
+test('a Bark retry finishing during shutdown does not arm another retry', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+  let attempts = 0;
+  let finish;
+  const { m } = fixture(
+    t,
+    async (c) => ({
+      stores: c.stores.map((id) => ({
+        id,
+        name: STORES[id],
+        status: id === 'R001' ? 'available' : 'unavailable',
+        checkedAt: Date.now(),
+      })),
+    }),
+    async () => {
+      attempts++;
+      if (attempts === 1) {
+        throw { safeMessage: 'HTTP 500' };
+      }
+      await new Promise((resolve) => (finish = resolve));
+      throw { safeMessage: 'HTTP 500' };
+    },
+  );
+  ready(m);
+  await m.run();
+  t.mock.timers.tick(10001);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(attempts, 2);
+  const timer = m.barkRetryTimer;
+  const stopped = m.stop();
+  finish();
+  await stopped;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(m.barkRetryTimer, timer);
+});
+
+test('failed stock Bark retries in its round with the same id, then stops', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  const sent = [];
+  let failures = 2;
+  const { m } = fixture(
+    t,
+    async (c) => ({
+      stores: c.stores.map((id) => ({
+        id,
+        name: STORES[id],
+        status: id === 'R001' ? 'available' : 'unavailable',
+        description: 'Today',
+        checkedAt: Date.now(),
+      })),
+    }),
+    async (url, payload) => {
+      sent.push(payload);
+      if (failures > 0) {
+        failures--;
+        throw { safeMessage: 'HTTP 500' };
+      }
+    },
+  );
+  ready(m);
+  await m.run();
+  assert.equal(sent.length, 1);
+  assert.equal(m.v.runtime.bark.pending.length, 1);
+  t.mock.timers.tick(10001);
+  await flush();
+  assert.equal(sent.length, 2);
+  t.mock.timers.tick(10001);
+  await flush();
+  assert.equal(sent.length, 3);
+  assert.equal(new Set(sent.map((p) => p.id)).size, 1);
+  assert.equal(m.v.runtime.bark.state, 'accepted');
+  assert.equal(m.v.runtime.bark.pending.length, 0);
+
+  failures = 9;
+  sent.length = 0;
+  await m.run();
+  for (let i = 0; i < 4; i++) {
+    t.mock.timers.tick(10001);
+    await flush();
+  }
+  assert.equal(sent.length, 3);
+});
+
+test('pausing cancels a queued stock Bark retry', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+  const sent = [];
+  const { m } = fixture(
+    t,
+    async (c) => ({
+      stores: c.stores.map((id) => ({
+        id,
+        name: STORES[id],
+        status: 'available',
+        checkedAt: Date.now(),
+      })),
+    }),
+    async (url, payload) => {
+      sent.push(payload);
+      throw { safeMessage: 'HTTP 500' };
+    },
+  );
+  ready(m);
+  await m.run();
+  const attempts = sent.length;
+  await m.control('pause');
+  t.mock.timers.tick(10001);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent.length, attempts);
+});
+
 test('partial response preserves valid available stores, never updates full-success timestamp', async (t) => {
   const sent = [];
   const { m } = fixture(
@@ -464,6 +635,37 @@ test('pause retains a failed in-flight phone group and its Retry-After deadline'
   assert.equal(m.v.runtime.irm.notBefore, retryAt);
 });
 
+test('Bark failures use a short cooldown independently of query retries and allow testing at the deadline', async (t) => {
+  let now = Date.now();
+  let requests = 0;
+  t.mock.method(Date, 'now', () => now);
+  const { m, dir } = fixture(t, undefined, async () => {
+    requests++;
+    if (requests === 1) {
+      throw new Error('Network timeout');
+    }
+  });
+  ready(m, { retryMin: 500001, retryMax: 599999 });
+  assert.equal(await m.bark({ id: 'stock', title: 'Stock', body: 'Stock' }), false);
+  assert.equal(m.v.runtime.bark.state, 'cooldown');
+  const deadline = now + 10000;
+  assert.equal(m.v.runtime.bark.notBefore, deadline);
+  const reopened = new Store(dir, secrets);
+  try {
+    assert.equal(reopened.value.runtime.bark.notBefore, deadline);
+  } finally {
+    reopened.close();
+  }
+  now = deadline - 1;
+  await assert.rejects(m.control('test-bark'), { status: 429 });
+  assert.equal(requests, 1);
+  now = deadline;
+  await m.control('test-bark');
+  assert.equal(requests, 2);
+  assert.equal(m.v.runtime.bark.state, 'accepted');
+  assert.equal(m.v.runtime.bark.notBefore, 0);
+});
+
 test('Bark tests and stock pushes serialize and cannot erase or bypass Retry-After', async (t) => {
   for (const limitedRequest of [1, 2]) {
     let release;
@@ -695,7 +897,10 @@ test('notification adapter accepts Grafana JSON string Ok. and Bark code 200, re
   response = new Response('unavailable', { status: 429, headers: { 'retry-after': '600' } });
   await assert.rejects(
     post('https://example.grafana.net/webhook', {}, 'irm'),
-    (error) => error.safeMessage === 'HTTP 429' && error.retryAt >= Date.now() + 599000,
+    (error) =>
+      error.safeMessage === 'HTTP 429' &&
+      error.status === 429 &&
+      error.retryAt >= Date.now() + 599000,
   );
 });
 

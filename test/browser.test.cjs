@@ -93,17 +93,67 @@ test(
       ],
       [
         '<span class="rf-pickup-quote-value"><button class="rf-pickup-quote-overlay-trigger" data-ase-overlay="buac-overlay">Apple Store</button></span><div role="dialog" aria-label="iPhone Availability">Loading…</div>',
-        '等待取货初始结果',
+        '重新打开取货弹窗',
       ],
     ]) {
       await page.setContent(html);
       let step;
       await assert.rejects(
-        openPickupDialog(page, (s) => (step = s)),
+        openPickupDialog(page, (s) => (step = s), 200),
         { name: 'TimeoutError' },
       );
       assert.equal(step, expected);
     }
+  },
+);
+
+test(
+  'an empty pickup dialog is reopened once before the query fails',
+  { skip: dockerOnly },
+  async (t) => {
+    const browser = await chromium.launch({ headless: true, chromiumSandbox: true });
+    t.after(() => browser.close());
+    const page = await browser.newPage();
+    page.setDefaultTimeout(1000);
+    const entry =
+      '<span class="rf-pickup-quote-value"><button class="rf-pickup-quote-overlay-trigger" data-ase-overlay="buac-overlay">Apple Store</button></span>';
+    const script = (loadsOnOpen) => `<script>
+      window.opens = 0;
+      document.querySelector('button').onclick = () => {
+        window.opens++;
+        const results = window.opens === ${loadsOnOpen} ? '<input hidden name="store-${PRODUCT.part}">' : '';
+        document.body.insertAdjacentHTML('beforeend', '<div role="dialog" aria-label="iPhone Availability"><input name="search">' + results + '</div>');
+      };
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          document.querySelector('[role=dialog]').remove();
+        }
+      });
+      </script>`;
+
+    await page.setContent(entry + script(2));
+    const steps = [];
+    const dialog = await openPickupDialog(page, (s) => steps.push(s), 200);
+    assert.equal(await dialog.locator('input[name^="store-"]').count(), 1);
+    assert.equal(steps.filter((s) => s === '重新打开取货弹窗').length, 1);
+    assert.equal(steps.at(-1), '等待取货初始结果');
+
+    await page.setContent(entry + script(3));
+    let step;
+    await assert.rejects(
+      openPickupDialog(page, (s) => (step = s), 200),
+      { name: 'TimeoutError' },
+    );
+    assert.equal(step, '等待取货初始结果');
+    assert.equal(await page.evaluate(() => window.opens), 2);
+
+    await page.setContent(entry + script(2));
+    await assert.rejects(
+      openPickupDialog(page, (s) => (step = s), 200, { httpError: { safeMessage: 'HTTP 429' } }),
+      { name: 'TimeoutError' },
+    );
+    assert.equal(step, '等待取货初始结果');
+    assert.equal(await page.evaluate(() => window.opens), 1);
   },
 );
 
