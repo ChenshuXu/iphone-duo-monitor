@@ -99,6 +99,17 @@ const channelNames = {
   cooldown: '冷却中',
   paused: '需要处理',
 };
+const channelStateName = (channel, now) => {
+  if (!channel.configured) {
+    return '未配置';
+  }
+
+  if (channel.state === 'cooldown' && !(channel.notBefore > now)) {
+    return channelNames.failed;
+  }
+
+  return channelNames[channel.state] || '等待下一轮';
+};
 const date = (n) =>
   n
     ? new Date(n).toLocaleString(language, {
@@ -319,10 +330,7 @@ function render(data, fresh = true) {
 
   for (const name of ['bark', 'irm']) {
     const channel = r[name];
-    setText(
-      $(`#${name}-state`),
-      !channel.configured ? '未配置' : channelNames[channel.state] || '等待下一轮',
-    );
+    setText($(`#${name}-state`), channelStateName(channel, data.serverTime));
     setText(
       $(`#${name}-at`),
       channel.legacyPaused
