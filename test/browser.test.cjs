@@ -443,6 +443,7 @@ test(
     });
     await page.goto('http://monitor.test/');
     await page.waitForFunction(() => document.querySelector('#toggle').textContent === '恢复监控');
+    assert.equal(await page.locator('#bark-state').textContent(), '冷却中');
     assert.match(await page.locator('#bark-at').textContent(), /冷却至/);
     assert.equal(await page.locator('input[name="barkKey"], input[name="irmWebhook"]').count(), 0);
     assert.match(await page.locator('#bark-help').textContent(), /从 .env 配置/);
@@ -649,7 +650,7 @@ test(
       lastAttempt: now,
       lastComplete: null,
       stores,
-      bark: { configured: true, state: 'cooldown', notBefore: now + 900000 },
+      bark: { configured: true, state: 'cooldown', attemptedAt: now - 2000, notBefore: now - 1000 },
       irm: { configured: true, state: 'idle', pendingGroups: 0 },
     };
     const history = {
@@ -738,6 +739,8 @@ test(
     assert.equal(await page.title(), 'iPhone Duo · Pickup monitor');
     assert.equal(await page.locator('#language').getAttribute('aria-label'), 'Language');
     assert.equal(await page.locator('#toggle').textContent(), 'Resume monitoring');
+    assert.equal(await page.locator('#bark-state').textContent(), 'Failed');
+    assert.match(await page.locator('#bark-at').textContent(), /Last attempt/);
     assert.match(await page.locator('#events').textContent(), /Settings saved, version 7/);
     const untranslated = await page.evaluate(() => {
       const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
