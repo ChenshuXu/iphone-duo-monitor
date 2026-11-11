@@ -60,6 +60,17 @@ function validateTarget(c) {
 }
 
 const HISTORY_DAYS = 60;
+const EVENT_DAYS = 30;
+const RECENT_EVENTS = 200;
+const DIAGNOSTIC_LIMIT = 20;
+const EVENT_PAGE = 50;
+const EVENT_FILTERS = {
+  '': '1',
+  stock: 'keep=1',
+  notify: "type IN ('bark','irm')",
+  error: "type='error'",
+  nonquery: "type<>'query'",
+};
 const DAY = 86400000;
 const BARK_RETRY_DELAY = 10000;
 const BARK_STOCK_RETRIES = 2;
@@ -279,6 +290,26 @@ function unknownStores(config, previous = []) {
   }));
 }
 
+// Older databases stored events without a retention flag; recover the stock-related ones.
+function legacyStockEvent(e) {
+  return (
+    (e.type === 'query' && /：[1-9]\d* 家可取货/.test(e.message)) ||
+    (e.type === 'bark' && e.message.startsWith('iPhone Duo · '))
+  );
+}
+
+function eventRow(r) {
+  return {
+    id: r.id,
+    seq: r.seq,
+    at: r.at,
+    type: r.type,
+    message: r.message,
+    ...(r.diagnostic ? { diagnostic: r.diagnostic } : {}),
+    ...(r.keep ? { keep: true } : {}),
+  };
+}
+
 class Store {
   constructor(dir, secrets = {}, irmHost = '') {
     validateSecrets(secrets, irmHost);
@@ -291,6 +322,11 @@ class Store {
     this.db.exec(
       'PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL)',
     );
+    this.db.exec(`CREATE TABLE IF NOT EXISTS events (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, at INTEGER NOT NULL,
+      type TEXT NOT NULL, message TEXT NOT NULL, diagnostic TEXT, keep INTEGER NOT NULL DEFAULT 0
+    ); CREATE INDEX IF NOT EXISTS events_at ON events(keep, at);
+    CREATE INDEX IF NOT EXISTS events_diagnostic ON events(diagnostic) WHERE diagnostic IS NOT NULL`);
     const row = this.db.prepare('SELECT json FROM state WHERE id=1').get();
     if (row) {
       this.value = JSON.parse(row.json);
@@ -321,6 +357,11 @@ class Store {
     if (!this.value.config || !this.value.runtime) {
       throw new Error('配置数据库结构无效；不会自动重置。');
     }
+    // Events moved from the state JSON to their own table; migrate them oldest first.
+    this.pendingEvents = (this.value.events || [])
+      .toReversed()
+      .map((e) => ({ ...e, ...(legacyStockEvent(e) ? { keep: true } : {}) }));
+    this.value.events = [];
     const legacy = this.value.secrets;
     if (legacy && ['barkKey', 'irmWebhook'].some((k) => legacy[k] && !secrets[k])) {
       this.db.close();
@@ -409,10 +450,64 @@ class Store {
       );
     }
     this.pruneHistory();
+    this.value.events = this.recentEvents();
   }
 
+  // Rounds that found stock are kept permanently; other rounds roll off after HISTORY_DAYS.
   pruneHistory(now = Date.now()) {
-    this.db.prepare('DELETE FROM queries WHERE started_at < ?').run(now - HISTORY_DAYS * DAY);
+    this.db
+      .prepare('DELETE FROM queries WHERE started_at < ? AND available_count = 0')
+      .run(now - HISTORY_DAYS * DAY);
+    this.pruneEvents(now);
+  }
+
+  // Stock-related events are kept permanently; other events roll off after EVENT_DAYS.
+  pruneEvents(now = Date.now()) {
+    const removed = this.db
+      .prepare('DELETE FROM events WHERE keep = 0 AND at < ?')
+      .run(now - EVENT_DAYS * DAY).changes;
+    if (removed) {
+      this.value.events = this.recentEvents();
+    }
+  }
+
+  recentEvents() {
+    return this.db
+      .prepare(`SELECT * FROM events ORDER BY seq DESC LIMIT ${RECENT_EVENTS}`)
+      .all()
+      .map(eventRow);
+  }
+
+  eventLog(params = new URLSearchParams()) {
+    const type = params.get('type') || '';
+    const before = params.get('before');
+    if (
+      !Object.hasOwn(EVENT_FILTERS, type) ||
+      (before !== null && !/^[1-9]\d{0,15}$/.test(before))
+    ) {
+      fail('事件筛选条件无效。');
+    }
+    const where = [EVENT_FILTERS[type]];
+    const args = [];
+    if (before !== null) {
+      where.push('seq < ?');
+      args.push(Number(before));
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM events WHERE ${where.join(' AND ')} ORDER BY seq DESC LIMIT ${EVENT_PAGE + 1}`,
+      )
+      .all(...args);
+    const page = rows.slice(0, EVENT_PAGE);
+    return {
+      retentionDays: EVENT_DAYS,
+      items: page.map(eventRow),
+      nextCursor: rows.length > EVENT_PAGE ? String(page.at(-1).seq) : null,
+    };
+  }
+
+  hasDiagnostic(id) {
+    return !!this.db.prepare('SELECT 1 FROM events WHERE diagnostic = ?').get(id);
   }
 
   beginQuery(config, id, startedAt, source = 'live') {
@@ -470,7 +565,7 @@ class Store {
     const outcome = params.get('outcome') || '';
     const available = params.get('available') || '0';
     if (
-      !['1', '7', '30', '60'].includes(days) ||
+      !['1', '7', '30', '60', 'all'].includes(days) ||
       (store && !/^R\d{3,6}$/.test(store)) ||
       !['', 'checking', 'complete', 'partial', 'failed', 'interrupted'].includes(outcome) ||
       !['0', '1'].includes(available)
@@ -479,7 +574,7 @@ class Store {
     }
     this.pruneHistory(now);
     const where = ['q.started_at >= ?'];
-    const args = [now - Number(days) * DAY];
+    const args = [days === 'all' ? 0 : now - Number(days) * DAY];
     if (store) {
       where.push(
         "EXISTS(SELECT 1 FROM json_each(q.stores_json) s WHERE json_extract(s.value, '$.id')=?)",
@@ -570,18 +665,49 @@ class Store {
   }
 
   commit() {
+    const { events, ...state } = this.value;
+    const inserted = [];
     this.db.exec('BEGIN IMMEDIATE');
     try {
       this.db
         .prepare('INSERT INTO state VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET json=excluded.json')
-        .run(JSON.stringify(this.value));
+        .run(JSON.stringify(state));
+      const insert = this.db.prepare(
+        'INSERT INTO events(id, at, type, message, diagnostic, keep) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING RETURNING seq',
+      );
+      for (const e of this.pendingEvents) {
+        const row = insert.get(
+          e.id,
+          e.at,
+          e.type,
+          e.message,
+          e.diagnostic || null,
+          Number(!!e.keep),
+        );
+        inserted.push([e, row?.seq]);
+      }
+      this.db
+        .prepare(
+          `UPDATE events SET diagnostic = NULL WHERE diagnostic IS NOT NULL AND seq NOT IN (SELECT seq FROM events WHERE diagnostic IS NOT NULL ORDER BY seq DESC LIMIT ${DIAGNOSTIC_LIMIT})`,
+        )
+        .run();
       this.db.exec('COMMIT');
     } catch (e) {
       this.db.exec('ROLLBACK');
       throw e;
     }
+    this.pendingEvents = [];
+    for (const [e, seq] of inserted) {
+      if (seq) {
+        e.seq = seq;
+      }
+    }
+    this.pruneEvents();
     const diagDir = path.join(this.dir, 'diagnostics');
-    const keep = this.value.events.filter((e) => e.diagnostic).map((e) => e.diagnostic);
+    const keep = this.db
+      .prepare('SELECT diagnostic FROM events WHERE diagnostic IS NOT NULL')
+      .all()
+      .map((r) => r.diagnostic);
     if (fs.existsSync(diagDir)) {
       for (const f of fs.readdirSync(diagDir)) {
         if (!keep.includes(f.replace(/\.png$/, ''))) {
@@ -591,19 +717,22 @@ class Store {
     }
   }
 
-  event(type, message, diagnostic) {
-    this.value.events.unshift({
+  event(type, message, diagnostic, keep = false) {
+    const event = {
       id: randomUUID(),
       at: Date.now(),
       type,
       message,
       ...(diagnostic ? { diagnostic } : {}),
-    });
-    this.value.events.length = Math.min(this.value.events.length, 200);
+      ...(keep ? { keep: true } : {}),
+    };
+    this.value.events.unshift(event);
+    this.pendingEvents.push(event);
+    this.value.events.length = Math.min(this.value.events.length, RECENT_EVENTS);
     let count = 0;
-    for (const event of this.value.events) {
-      if (event.diagnostic && ++count > 20) {
-        delete event.diagnostic;
+    for (const e of this.value.events) {
+      if (e.diagnostic && ++count > DIAGNOSTIC_LIMIT) {
+        delete e.diagnostic;
       }
     }
   }
@@ -638,8 +767,8 @@ class Monitor {
     this.changed();
   }
 
-  event(type, message, diagnostic) {
-    this.store.event(type, message, diagnostic);
+  event(type, message, diagnostic, keep) {
+    this.store.event(type, message, diagnostic, keep);
   }
 
   start() {
@@ -846,15 +975,15 @@ class Monitor {
     return next.config;
   }
 
-  bark(message, { test = false, activeOnly = false } = {}) {
+  bark(message, { test = false, activeOnly = false, stock = false } = {}) {
     const version = this.v.config.version;
     this.barkQueue = this.barkQueue.then(() =>
-      this.sendBark(message, { test, activeOnly, version }),
+      this.sendBark(message, { test, activeOnly, stock, version }),
     );
     return this.barkQueue;
   }
 
-  async sendBark(message, { test, activeOnly, version }) {
+  async sendBark(message, { test, activeOnly, stock, version }) {
     const c = this.v.config;
     const r = this.v.runtime;
     if (
@@ -888,14 +1017,16 @@ class Monitor {
       r.bark.state = 'cooldown';
       this.event(
         'error',
-        `Bark 发送失败：${e.safeMessage || '网络错误或超时'}；Bark 渠道独立冷却。`,
+        `${stock ? `${message.title}：` : ''}Bark 发送失败：${e.safeMessage || '网络错误或超时'}；Bark 渠道独立冷却。`,
+        undefined,
+        stock,
       );
       this.publish();
       return false;
     }
     r.bark.state = 'accepted';
     r.bark.notBefore = 0;
-    this.event('bark', `${test ? '测试通知' : message.title}：Bark 服务已接受。`);
+    this.event('bark', `${test ? '测试通知' : message.title}：Bark 服务已接受。`, undefined, stock);
     this.publish();
     return true;
   }
@@ -906,7 +1037,7 @@ class Monitor {
       if (r.paused || this.stopping || version !== this.v.config.version) {
         break;
       }
-      if (await this.bark(message, { activeOnly: true })) {
+      if (await this.bark(message, { activeOnly: true, stock: true })) {
         r.bark.pending = r.bark.pending.filter((m) => m.id !== message.id);
         this.publish();
       }
@@ -986,25 +1117,30 @@ class Monitor {
     return true;
   }
 
-  irmFailure(e) {
+  irmFailure(e, stock = false) {
     const r = this.v.runtime.irm;
     const c = this.v.config;
     r.notBefore = Math.max(e.retryAt || 0, Date.now() + randomDelay(c.retryMin, c.retryMax));
     r.state = 'cooldown';
     r.attemptedAt = Date.now();
-    this.event('error', `IRM 请求失败：${e.safeMessage || '网络错误或超时'}；电话渠道独立冷却。`);
+    this.event(
+      'error',
+      `IRM 请求失败：${e.safeMessage || '网络错误或超时'}；电话渠道独立冷却。`,
+      undefined,
+      stock,
+    );
     this.publish();
   }
 
-  submitIrm(id, title, message, { activeOnly = false } = {}) {
+  submitIrm(id, title, message, { activeOnly = false, stock = false } = {}) {
     const version = this.v.config.version;
     this.irmQueue = this.irmQueue.then(() =>
-      this.sendIrm(id, title, message, { activeOnly, version }),
+      this.sendIrm(id, title, message, { activeOnly, stock, version }),
     );
     return this.irmQueue;
   }
 
-  async sendIrm(id, title, message, { activeOnly, version }) {
+  async sendIrm(id, title, message, { activeOnly, stock, version }) {
     const r = this.v.runtime.irm;
     if (
       this.v.config.version !== version ||
@@ -1029,12 +1165,12 @@ class Monitor {
     try {
       await this.post(this.store.secrets.irmWebhook, payload, 'irm');
     } catch (e) {
-      this.irmFailure(e);
+      this.irmFailure(e, stock);
       return;
     }
     r.state = 'accepted';
     r.cleanupReported = false;
-    this.event('irm', 'IRM 服务已接受分组，尚未确认电话接通。');
+    this.event('irm', 'IRM 服务已接受分组，尚未确认电话接通。', undefined, stock);
     this.publish();
   }
 
@@ -1108,12 +1244,14 @@ class Monitor {
       } else {
         r.failures++;
       }
+      const availableCount = r.stores.filter((s) => s.status === 'available').length;
       this.event(
         complete ? 'query' : 'error',
         complete
-          ? `第 ${c.version} 版查询完成：${r.stores.filter((s) => s.status === 'available').length} 家可取货，${r.stores.length} 家有效。`
+          ? `第 ${c.version} 版查询完成：${availableCount} 家可取货，${r.stores.length} 家有效。`
           : `查询失败：${result.error || '部分门店未知'}，库存待确认。`,
         result.diagnostic,
+        availableCount > 0,
       );
       if (
         !complete &&
@@ -1153,7 +1291,7 @@ class Monitor {
           round,
           `iPhone Duo pickup available at ${available.map((s) => s.name).join(', ')}. Checked at ${new Date(finishedAt).toISOString()}. Check Bark for the purchase link.`,
           `${productFor(c).name}; ZIP ${c.zip}; ${new Date(finishedAt).toISOString()}`,
-          { activeOnly: true },
+          { activeOnly: true, stock: true },
         );
       }
     } finally {

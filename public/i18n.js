@@ -17,7 +17,8 @@
     附近门店: 'Nearby stores',
     库存按监控周期更新: 'Inventory updates on the monitoring schedule',
     查询历史: 'Query history',
-    '保留最近 60 天 · 自动更新': 'Last 60 days · Updates automatically',
+    '保留最近 60 天 · 有货记录永久保留': 'Last 60 days · Stock records kept permanently',
+    全部记录: 'All records',
     '正在读取历史记录…': 'Loading query history…',
     查询轮次: 'Query rounds',
     出现有货的轮次: 'Rounds with stock',
@@ -87,7 +88,18 @@
     '首次保存即确认选定门店；恢复监控是独立操作。':
       'Saving confirms the selected stores. Resume monitoring when ready.',
     最近事件: 'Recent events',
-    '最多 200 条': 'Up to 200 events',
+    '保留 30 天 · 有货相关永久保留': '30 days · Stock-related events kept permanently',
+    事件类型: 'Event type',
+    全部事件: 'All events',
+    有货与提醒: 'Stock and alerts',
+    通知发送: 'Notifications',
+    错误: 'Errors',
+    隐藏普通查询: 'Hide routine queries',
+    加载更早事件: 'Load earlier events',
+    '正在读取更早事件…': 'Loading earlier events…',
+    '没有更早事件。': 'No earlier events.',
+    '没有符合条件的事件。': 'No matching events.',
+    '事件筛选条件无效。': 'Invalid event filter.',
     'Docker 独立运行 · 时间使用浏览器所在时区 · 购买后请暂停监控。':
       'Runs in Docker · Browser-local times · Pause after buying.',
     已暂停: 'Paused',
@@ -141,8 +153,8 @@
     '服务端已是第 {version} 版。当前编辑内容仍保留；重新载入后再保存。':
       'The server has version {version}. Your edits are retained; reload before saving.',
     '正在读取记录…': 'Loading records…',
-    '完整查询历史从 {time} 开始，保留最近 {days} 天。更早仅保留迁移时可恢复的最近一次结果。':
-      'Complete history starts at {time} and is retained for {days} days. Older history includes only the latest recoverable snapshot.',
+    '完整查询历史从 {time} 开始，保留最近 {days} 天，有货轮次永久保留。更早仅保留迁移时可恢复的最近一次结果。':
+      'Complete history starts at {time} and is retained for {days} days; rounds with stock are kept permanently. Older history includes only the latest recoverable snapshot.',
     '{count} 次有货查询': '{count} queries with stock',
     '首次记录：{time}': 'First recorded: {time}',
     '最近记录：{time}': 'Last recorded: {time}',
@@ -270,6 +282,8 @@
     电话渠道异常: 'Phone channel fault',
     'iPhone Duo 监控故障': 'iPhone Duo monitor fault',
     'iPhone Duo 监控恢复': 'iPhone Duo monitor recovered',
+    '{title}：Bark 发送失败：{error}；Bark 渠道独立冷却。':
+      '{title}: Bark failed: {error}. Bark is cooling down independently.',
     'Bark 发送失败：{error}；Bark 渠道独立冷却。':
       'Bark failed: {error}. Bark is cooling down independently.',
     网络错误或超时: 'Network error or timeout',

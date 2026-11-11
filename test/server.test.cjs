@@ -221,6 +221,14 @@ test(
     assert.equal(translations.status, 200);
     assert.match(translations.headers.get('content-type'), /javascript/);
     assert.match(await translations.text(), /monitorI18n/);
+    const log = await (await api('/api/event-log')).json();
+    assert.equal(log.retentionDays, 30);
+    assert.equal(log.nextCursor, null);
+    assert.equal(log.items[0].message, '服务启动；旧库存待重新核验。');
+    assert.equal(log.items[0].seq, initial.events[0].seq);
+    assert.equal((await api('/api/event-log?type=unknown')).status, 400);
+    assert.equal((await api('/api/event-log?before=-1')).status, 400);
+    assert.equal((await api('/api/diagnostics/00000000-0000-4000-8000-000000000000')).status, 404);
     assert.equal(initial.runtime.paused, true);
     assert.equal(initial.config.zip, '');
     assert.equal(initial.config.barkConfigured, true);

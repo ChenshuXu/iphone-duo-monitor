@@ -7,7 +7,7 @@ A Docker-hosted monitor for iPhone Duo pickup availability on the Apple US store
 - Use any five-digit US ZIP code. Nearby stores come from Apple's current results.
 - Star White / Night Sky; 256GB / 512GB / 1TB / 2TB; AT&T / T-Mobile / Verizon / Connect to any carrier later.
 - A dedicated Chromium browser checks each round and verifies the product, ZIP code, and stores. Page changes and request failures produce an unknown result.
-- Settings, pause state, and 60 days of per-store query history persist across restarts. History can be filtered for past availability.
+- Settings, pause state, and 60 days of per-store query history persist across restarts. Rounds with stock are kept permanently. History can be filtered for past availability.
 - Bark and phone calls can be enabled independently. No Apple account is needed; follow the alert to purchase on Apple's website.
 
 Supports iPhone Duo on the Apple **US store**, with product options checked against Apple's pages. Inventory reflects the query time; check Apple's page when purchasing.
@@ -117,7 +117,7 @@ For older installations that stored credentials in the database, back up first a
 
 ## 4. History, updates, and backups
 
-Query history (查询历史) uses the browser's time zone. Filter by the last 24 hours, 7 / 30 / 60 days, store, or outcome; each page contains 50 rounds. Every monitoring query saves its product, ZIP code, and per-store result. A service exit during a query leaves an interrupted record. Store discovery is for setup and is excluded from monitoring history. Availability counts measure query snapshots, not the duration of continuous stock.
+Query history (查询历史) uses the browser's time zone. Filter by the last 24 hours, 7 / 30 / 60 days, all records, store, or outcome; each page contains 50 rounds. Every monitoring query saves its product, ZIP code, and per-store result. A service exit during a query leaves an interrupted record. Store discovery is for setup and is excluded from monitoring history. Availability counts measure query snapshots, not the duration of continuous stock.
 
 Keep deployment parameters, the Bark key, and the full Grafana Webhook in `.env`. Product settings, ZIP code, stores, switches, and Bark group / TTL are saved to SQLite through the dashboard. Credentials are read only from the process environment and are not written into new database state records. Git and the Docker build context ignore `.env`, `data/`, databases, and private `local/` operations notes. Keep `.env.example` generic. Existing installations using a bind directory can set `DATA_VOLUME=./data`; the default uses a named volume.
 
@@ -136,7 +136,9 @@ docker compose up -d --build
 docker compose logs --tail 50 monitor
 ```
 
-A paused instance stays paused after restart. An active instance resumes on the normal schedule. The latest 200 events, 20 failure screenshots, and 60 days of query history are retained automatically; history pruning also runs while paused.
+A paused instance stays paused after restart. An active instance resumes on the normal schedule. Events are stored in SQLite for 30 days, query history for 60 days, and the latest 20 failure screenshots are kept. Rounds that found stock, together with their inventory events and Bark / phone delivery results (including failures), are kept permanently and never pruned. Pruning also runs while paused.
+
+Recent events (最近事件) shows the latest 200 events live. Filter by type (stock and alerts, notifications, errors, hide routine queries) and use Load earlier events (加载更早事件) to page back. On upgrade, events stored in the old state record migrate to the event table automatically; recognizable stock queries and stock Bark records are marked for permanent retention.
 
 Pause and stop the service before backing up so SQLite finishes writing. This command supports named volumes and bind directories and creates `monitor-backup.tar.gz` in the current directory. It uses a temporary file with permissions `0600` and replaces the old backup only after a successful, nonempty export:
 
@@ -170,7 +172,7 @@ Restoring brings back the saved pause state and dashboard settings. Credentials 
 
 Check the storage type before deleting data: `down -v` leaves bind-directory databases, history, and browser profiles intact and does not delete `.env`. When investigating browser profile locks, first confirm that the old container and browser have stopped; retain the existing cookies and profile locks.
 
-Execution steps and network errors (执行步骤与网络异常) in query history retain step timings and Apple HTTP / network errors for 60 days. URLs exclude user information, query strings, and fragments. Headers, cookies, and response bodies are not recorded. Diagnostics missing from old records cannot be reconstructed. Pickup queries handle both supported page entry layouts, ZIP prefill, and option recovery after product-page redirects, while verifying color, capacity, carrier, product number, and ZIP code.
+Execution steps and network errors (执行步骤与网络异常) in query history retain step timings and Apple HTTP / network errors with query history (60 days for ordinary rounds, permanently for rounds with stock). URLs exclude user information, query strings, and fragments. Headers, cookies, and response bodies are not recorded. Diagnostics missing from old records cannot be reconstructed. Pickup queries handle both supported page entry layouts, ZIP prefill, and option recovery after product-page redirects, while verifying color, capacity, carrier, product number, and ZIP code.
 
 ## 5. Development and verification
 

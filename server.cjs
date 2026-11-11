@@ -170,6 +170,9 @@ async function handler(req, res) {
     if (route === '/api/history' && req.method === 'GET') {
       return send(res, 200, store.history(url.searchParams));
     }
+    if (route === '/api/event-log' && req.method === 'GET') {
+      return send(res, 200, store.eventLog(url.searchParams));
+    }
     if (route === '/api/settings' && req.method === 'GET') {
       return send(res, 200, settings());
     }
@@ -232,7 +235,7 @@ async function handler(req, res) {
     }
     const diagnostic = /^\/api\/diagnostics\/([a-f0-9-]{36})$/.exec(route);
     if (diagnostic && req.method === 'GET') {
-      if (!store.value.events.some((e) => e.diagnostic === diagnostic[1])) {
+      if (!store.hasDiagnostic(diagnostic[1])) {
         fail('诊断不存在。', 404);
       }
       return send(

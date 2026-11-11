@@ -34,6 +34,10 @@ test('historical events, nested failures and API validation errors translate wit
     'Bark failed: Network error or timeout. Bark is cooling down independently.',
   );
   assert.equal(
+    translate('iPhone Duo · Alderwood：Bark 发送失败：HTTP 500；Bark 渠道独立冷却。', 'en'),
+    'iPhone Duo · Alderwood: Bark failed: HTTP 500. Bark is cooling down independently.',
+  );
+  assert.equal(
     translate('iPhone Duo 监控故障：Bark 服务已接受。', 'en'),
     'iPhone Duo monitor fault: Bark accepted the notification.',
   );

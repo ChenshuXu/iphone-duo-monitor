@@ -164,7 +164,8 @@ The API shares the dashboard address. For host requests, the URL's Host must mat
 | `POST /api/discover` | Send string fields `zip`, `color`, `capacity`, and `carrier`; returns `catalog` and verified `product`, without saving settings |
 | `PUT /api/settings` | Merge the target, discovered `catalog`, selected store ID array `stores`, and switches into the current complete settings. Include the current `version`; a successful save increments it |
 | `POST /api/control` | Send `{"action":"..."}`; supports `pause`, `resume`, `query`, `test-bark`, `test-irm`, and `cleanup-irm`. Legacy recovery actions are separate from first-time setup |
-| `GET /api/history` | Read monitoring rounds, including outcome, config, stores, verification, and diagnostics. Store discovery is excluded |
+| `GET /api/history` | Read monitoring rounds, including outcome, config, stores, verification, and diagnostics. Store discovery is excluded. `days=all` includes permanently retained rounds with stock |
+| `GET /api/event-log` | Page through events. `type` is empty, `stock`, `notify`, `error`, or `nonquery`; pass the previous page's `nextCursor` as `before` |
 
 Create `local/` and write the user's four target fields to `local/target.json`, using this format:
 

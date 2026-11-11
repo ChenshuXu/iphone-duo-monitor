@@ -354,20 +354,7 @@ function render(data, fresh = true) {
       : '电话尚未启用。接收者、路由与电话规则在 Grafana 中管理。',
   );
 
-  $('#events').replaceChildren(
-    ...data.events.map((e) => {
-      const el = node('li');
-      el.append(node('time', date(e.at)), node('div', e.message));
-      if (e.diagnostic) {
-        const a = node('a', '查看本轮失败截图 ↗');
-        a.href = `/api/diagnostics/${e.diagnostic}`;
-        a.target = '_blank';
-        a.rel = 'noopener';
-        el.append(a);
-      }
-      return el;
-    }),
-  );
+  renderEvents();
 
   if (!dirty) {
     populate(c);
@@ -417,7 +404,7 @@ async function loadHistory() {
     historyNext = data.nextCursor;
     setText(
       $('#history-coverage'),
-      `完整查询历史从 ${historyDate(data.historyStartedAt)} 开始，保留最近 ${data.retentionDays} 天。更早仅保留迁移时可恢复的最近一次结果。`,
+      `完整查询历史从 ${historyDate(data.historyStartedAt)} 开始，保留最近 ${data.retentionDays} 天，有货轮次永久保留。更早仅保留迁移时可恢复的最近一次结果。`,
     );
     setText($('#history-total'), data.summary.total.toLocaleString(language));
     setText($('#history-available'), data.summary.availableRounds.toLocaleString(language));
@@ -592,6 +579,108 @@ async function loadHistory() {
     }
   }
 }
+
+const eventFilters = {
+  '': () => true,
+  stock: (e) => e.keep,
+  notify: (e) => ['bark', 'irm'].includes(e.type),
+  error: (e) => e.type === 'error',
+  nonquery: (e) => e.type !== 'query',
+};
+let olderEvents = [];
+let eventsDone = false;
+let eventsLoading = false;
+let eventsRequest = 0;
+
+function eventOrder(a, b) {
+  return (b.seq ?? Infinity) - (a.seq ?? Infinity) || b.at - a.at;
+}
+
+// Live events come from the status stream; older pages accumulate below them.
+function shownEvents() {
+  const filter = eventFilters[$('#event-filter').value];
+  const live = (state?.events || []).filter(filter);
+  const seen = new Set();
+  const items = [];
+  for (const e of [...live, ...olderEvents]) {
+    if (!seen.has(e.id)) {
+      seen.add(e.id);
+      items.push(e);
+    }
+  }
+  return items.sort(eventOrder);
+}
+
+function renderEvents() {
+  const items = shownEvents();
+  $('#events').replaceChildren(
+    ...items.map((e) => {
+      const el = node('li', undefined, e.keep ? 'kept' : '');
+      el.append(node('time', date(e.at)), node('div', e.message));
+      if (e.diagnostic) {
+        const a = node('a', '查看本轮失败截图 ↗');
+        a.href = `/api/diagnostics/${e.diagnostic}`;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        el.append(a);
+      }
+      return el;
+    }),
+  );
+  $('#events-more').disabled = eventsLoading || eventsDone;
+  if (eventsLoading) {
+    setText($('#events-message'), '正在读取更早事件…');
+  } else if (eventsDone) {
+    setText($('#events-message'), items.length ? '没有更早事件。' : '没有符合条件的事件。');
+  } else {
+    setText($('#events-message'), '');
+  }
+}
+
+async function loadOlderEvents() {
+  const request = ++eventsRequest;
+  const type = $('#event-filter').value;
+  // Freeze what is shown so events leaving the live window are not lost.
+  const shown = shownEvents();
+  const seqs = [...(state?.events || []), ...olderEvents]
+    .map((e) => e.seq)
+    .filter((seq) => seq !== undefined);
+  const params = new URLSearchParams({ type });
+  if (seqs.length) {
+    params.set('before', String(Math.min(...seqs)));
+  }
+  eventsLoading = true;
+  renderEvents();
+  try {
+    const data = await api(`/api/event-log?${params}`);
+    if (request !== eventsRequest) {
+      return;
+    }
+    olderEvents = [...shown, ...data.items];
+    eventsDone = !data.nextCursor;
+  } catch (e) {
+    if (request === eventsRequest) {
+      toast(e.message);
+    }
+  } finally {
+    if (request === eventsRequest) {
+      eventsLoading = false;
+      renderEvents();
+    }
+  }
+}
+
+$('#events-more').onclick = () => void loadOlderEvents();
+$('#event-filter').onchange = () => {
+  eventsRequest++;
+  olderEvents = [];
+  eventsDone = false;
+  eventsLoading = false;
+  renderEvents();
+  if (shownEvents().length < 20) {
+    void loadOlderEvents();
+  }
+};
 
 function resetHistory() {
   historyCursors = [null];

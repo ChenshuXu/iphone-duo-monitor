@@ -164,7 +164,8 @@ API 与管理页共用地址。宿主机调用时，URL 的 Host 与 `PUBLIC_ORI
 | `POST /api/discover` | JSON 包含字符串 `zip`、`color`、`capacity`、`carrier`；返回 `catalog` 和核对后的 `product`；本身不保存目录或设置 |
 | `PUT /api/settings` | 以刚读取的完整设置为底稿，合并本次目标、真实 `catalog`、选中 ID 数组 `stores` 和通知开关；携带原 `version`，保存成功后版本递增 |
 | `POST /api/control` | JSON 为 `{"action":"..."}`；支持 `pause`、`resume`、`query`、`test-bark`、`test-irm`、`cleanup-irm`；旧版恢复动作不用于首次配置 |
-| `GET /api/history` | 读取真实监控轮次，检查 outcome、config、stores、verification 和 diagnostics；发现门店不产生监控历史 |
+| `GET /api/history` | 读取真实监控轮次，检查 outcome、config、stores、verification 和 diagnostics；发现门店不产生监控历史；`days=all` 包含永久保留的有货轮次 |
+| `GET /api/event-log` | 分页读取事件；`type` 为空、`stock`、`notify`、`error` 或 `nonquery`，`before` 传上一页的 `nextCursor` |
 
 创建 `local/`，在 `local/target.json` 写入用户所选的四个字段，格式如下：
 

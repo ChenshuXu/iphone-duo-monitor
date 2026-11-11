@@ -809,8 +809,9 @@ test('request query preserves error minimum and Retry-After even when the target
   assert.equal((await m.control('query')).queryStatus, 'scheduled');
   assert.equal(m.v.runtime.nextAt, now + m.v.config.retryMin);
 });
-test('events and screenshots have strict limits and pruned files are deleted', (t) => {
+test('events keep 200 live entries, 30 days in SQLite, 20 screenshots, and stock events permanently', (t) => {
   const { store, dir } = fixture(t);
+  const DAY = 86400000;
   fs.mkdirSync(path.join(dir, 'diagnostics'));
   for (let i = 0; i < 205; i++) {
     fs.writeFileSync(path.join(dir, 'diagnostics', `${i}.png`), 'test');
@@ -820,6 +821,142 @@ test('events and screenshots have strict limits and pruned files are deleted', (
   assert.equal(store.value.events.length, 200);
   assert.equal(store.value.events.filter((e) => e.diagnostic).length, 20);
   assert.equal(fs.readdirSync(path.join(dir, 'diagnostics')).length, 20);
+  assert.ok(store.hasDiagnostic('204'));
+  assert.ok(!store.hasDiagnostic('0'));
+  const seen = new Set();
+  let page = store.eventLog();
+  assert.equal(page.retentionDays, 30);
+  assert.equal(page.items.length, 50);
+  for (;;) {
+    for (const e of page.items) {
+      seen.add(e.id);
+    }
+    if (!page.nextCursor) {
+      break;
+    }
+    page = store.eventLog(new URLSearchParams({ before: page.nextCursor }));
+  }
+  assert.equal(seen.size, 205);
+
+  const now = Date.now();
+  store.event('query', 'routine expired');
+  store.event('query', 'routine boundary');
+  store.event('query', '第 7 版查询完成：1 家可取货，5 家有效。', undefined, true);
+  const [stock, boundary, expired] = store.value.events;
+  expired.at = now - 30 * DAY - 1000;
+  boundary.at = now - 30 * DAY + 60000;
+  stock.at = now - 400 * DAY;
+  store.commit();
+  const messages = (type) =>
+    store.eventLog(new URLSearchParams(type ? { type } : {})).items.map((e) => e.message);
+  assert.ok(!messages().includes('routine expired'));
+  assert.ok(messages().includes('routine boundary'));
+  assert.deepEqual(messages('stock'), ['第 7 版查询完成：1 家可取货，5 家有效。']);
+  assert.equal(messages('error').length, 50);
+  assert.ok(!store.value.events.some((e) => e.message === 'routine expired'));
+  for (const params of [{ type: 'x' }, { before: 'abc' }, { before: '0' }]) {
+    assert.throws(() => store.eventLog(new URLSearchParams(params)), /事件筛选条件无效/);
+  }
+
+  const reopened = new Store(dir, store.secrets);
+  try {
+    assert.equal(reopened.value.events.length, 200);
+    assert.ok(reopened.value.events.every((e) => Number.isSafeInteger(e.seq)));
+    assert.equal(reopened.value.events[0].message, '第 7 版查询完成：1 家可取货，5 家有效。');
+    assert.equal(reopened.value.events[0].keep, true);
+    const state = JSON.parse(reopened.db.prepare('SELECT json FROM state WHERE id=1').get().json);
+    assert.ok(!('events' in state));
+  } finally {
+    reopened.close();
+  }
+});
+test('legacy events stored in the state JSON migrate in order and keep stock records', (t) => {
+  const { store, dir } = fixture(t);
+  const DAY = 86400000;
+  const now = Date.now();
+  const legacy = [
+    { id: 'e5', at: now - 1000, type: 'query', message: '第 7 版查询完成：0 家可取货，5 家有效。' },
+    {
+      id: 'e4',
+      at: now - 2000,
+      type: 'bark',
+      message: 'iPhone Duo · Alderwood：Bark 服务已接受。',
+    },
+    { id: 'e3', at: now - 3000, type: 'bark', message: '测试通知：Bark 服务已接受。' },
+    {
+      id: 'e2',
+      at: now - 40 * DAY,
+      type: 'query',
+      message: '第 7 版查询完成：2 家可取货，5 家有效。',
+    },
+    { id: 'e1', at: now - 40 * DAY, type: 'control', message: '已暂停监控。' },
+  ];
+  const state = JSON.parse(store.db.prepare('SELECT json FROM state WHERE id=1').get().json);
+  store.db
+    .prepare('UPDATE state SET json=? WHERE id=1')
+    .run(JSON.stringify({ ...state, events: legacy }));
+  const reopened = new Store(dir, store.secrets);
+  try {
+    assert.deepEqual(
+      reopened.value.events.map((e) => [e.id, !!e.keep]),
+      [
+        ['e5', false],
+        ['e4', true],
+        ['e3', false],
+        ['e2', true],
+      ],
+    );
+    assert.deepEqual(
+      reopened.eventLog(new URLSearchParams({ type: 'stock' })).items.map((e) => e.id),
+      ['e4', 'e2'],
+    );
+    const saved = JSON.parse(reopened.db.prepare('SELECT json FROM state WHERE id=1').get().json);
+    assert.ok(!('events' in saved));
+  } finally {
+    reopened.close();
+  }
+});
+test('stock rounds mark their query and notification events for permanent retention', async (t) => {
+  let fail = true;
+  let available = true;
+  const { m } = fixture(
+    t,
+    async (c) => ({
+      stores: c.stores.map((id) => ({
+        id,
+        name: STORES[id],
+        status: available && id === 'R001' ? 'available' : 'unavailable',
+        description: 'Today',
+        checkedAt: Date.now(),
+      })),
+    }),
+    async () => {
+      if (fail) {
+        throw { safeMessage: 'HTTP 500' };
+      }
+    },
+  );
+  ready(m);
+  await m.run();
+  clearTimeout(m.barkRetryTimer);
+  const kept = () => m.store.eventLog(new URLSearchParams({ type: 'stock' })).items;
+  assert.deepEqual(
+    kept().map((e) => e.message),
+    [
+      `iPhone Duo · ${STORES.R001}：Bark 发送失败：HTTP 500；Bark 渠道独立冷却。`,
+      '第 1 版查询完成：1 家可取货，4 家有效。',
+    ].map((text) => text.replace('第 1 版', `第 ${m.v.config.version} 版`)),
+  );
+  fail = false;
+  m.v.runtime.bark.notBefore = 0;
+  await m.run();
+  assert.equal(kept()[0].message, `iPhone Duo · ${STORES.R001}：Bark 服务已接受。`);
+  available = false;
+  await m.run();
+  await m.bark({ id: 'test', title: 'test', body: 'test' }, { test: true });
+  assert.equal(kept().length, 4);
+  assert.ok(!m.v.events[0].keep);
+  assert.ok(!m.v.events[1].keep);
 });
 test('startup keeps pause, marks previous result stale and never sends a stock notification', (t) => {
   const { m } = fixture(t);
