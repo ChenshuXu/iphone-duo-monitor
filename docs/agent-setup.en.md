@@ -42,7 +42,7 @@ Handle the findings as follows:
 
 - Docker missing: install Linux Engine and the Compose plugin using the [official Docker Engine instructions](https://docs.docker.com/engine/install/), or install and start [Docker Desktop](https://docs.docker.com/desktop/) on a desktop system with Linux containers. Have the user complete administrator actions or system restarts, then continue.
 - Docker unavailable: check the daemon / Desktop, user permissions, and Docker context, and connect to the chosen deployment host.
-- Resources and architecture: reserve at least 2 GiB of available memory and check disk space for the build. Linux x86_64 Docker has been verified. Follow this procedure to verify the user's ARM64 / Apple Silicon, Windows, or NAS environment.
+- Resources and architecture: reserve at least 2 GiB of available memory and check disk space for the build. Linux x86_64 Docker has been verified. On Apple Silicon (arm64), the image builds and the automated tests pass. Follow this procedure to verify live Apple queries there and on the user's Windows or NAS environment.
 - Remote server: clone or transfer the source into the target directory over SSH / a terminal, then configure `.env`, build, and start on that machine.
 - ZIP download: extract it and enter the directory containing `compose.yaml`, `Dockerfile`, and `seccomp_profile.json`. Git is not required.
 

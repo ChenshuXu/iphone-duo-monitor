@@ -229,6 +229,7 @@ test(
     assert.equal((await api('/api/event-log?type=unknown')).status, 400);
     assert.equal((await api('/api/event-log?before=-1')).status, 400);
     assert.equal((await api('/api/diagnostics/00000000-0000-4000-8000-000000000000')).status, 404);
+    assert.deepEqual(initial.retention, { historyDays: 60, eventDays: 30 });
     assert.equal(initial.runtime.paused, true);
     assert.equal(initial.config.zip, '');
     assert.equal(initial.config.barkConfigured, true);
@@ -336,7 +337,34 @@ test(
       await res.json();
       return res.status;
     };
+    const pushes = [];
+    let pushed = () => {};
+    const nextPush = () =>
+      new Promise((resolve) => {
+        pushed = resolve;
+      });
+    const stream = http.get({ hostname: '127.0.0.1', port: 8080, path: '/api/events' });
+    t.after(() => stream.destroy());
+    stream.on('response', (res) => {
+      let buffer = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        buffer += chunk;
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();
+        for (const part of parts) {
+          pushes.push(JSON.parse(part.slice('data: '.length)));
+          pushed();
+        }
+      });
+    });
+    await nextPush();
+    assert.ok(Array.isArray(pushes[0].events));
+    const discoveryPush = nextPush();
     assert.equal(await discover(), 200);
+    await discoveryPush;
+    // A discovery publishes state without adding an event, so its push leaves events out.
+    assert.equal(Object.hasOwn(pushes[1], 'events'), false);
     assert.equal(await discover(), 429);
     await advance(59999);
     assert.equal(await discover(), 429);
@@ -375,6 +403,37 @@ test(
     assert.equal(history.items[0].outcome, 'complete');
     await control('pause');
     assert.equal(await discover(), 429);
+  },
+);
+
+test(
+  'a missing diagnostic screenshot and a non-object JSON body are rejected without stopping the service',
+  { timeout: 15000 },
+  async (t) => {
+    const diagnostic = '00000000-0000-4000-8000-000000000001';
+    const { api, child } = await startServer(
+      t,
+      `
+    const { Store } = require('./core.cjs');
+    const seeded = new Store(process.env.DATA_DIR);
+    seeded.event('error', 'Seeded failure', '${diagnostic}');
+    seeded.commit();
+    seeded.close();
+    require('./server.cjs');
+  `,
+    );
+    const missing = await api(`/api/diagnostics/${diagnostic}`);
+    assert.equal(missing.status, 404);
+    await missing.json();
+    const headers = { origin: 'http://127.0.0.1:8080', 'content-type': 'application/json' };
+    const list = await api('/api/control', { method: 'POST', headers, body: '[]' });
+    assert.equal(list.status, 400);
+    assert.equal((await list.json()).error, 'JSON 对象格式错误。');
+    const broken = await api('/api/control', { method: 'POST', headers, body: '{' });
+    assert.equal(broken.status, 400);
+    assert.equal((await broken.json()).error, 'JSON 格式错误。');
+    assert.equal((await api('/api/status')).status, 200);
+    assert.equal(child.exitCode, null);
   },
 );
 

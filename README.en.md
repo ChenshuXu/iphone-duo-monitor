@@ -35,7 +35,7 @@ Follow the [AI agent setup and deployment guide](docs/agent-setup.en.md) for the
 
 ## 1. Docker deployment
 
-You need Docker Engine with Compose v2, or Docker Desktop, at least 2 GiB of available memory, and network access to Apple and your selected notification services. Git is used for cloning and updates; a ZIP download can be deployed without Git. The container runs Linux, and Linux x86_64 has been verified. ARM64 / Apple Silicon has not been verified. Keep the Chromium sandbox enabled and use the supplied container permissions.
+You need Docker Engine with Compose v2, or Docker Desktop, at least 2 GiB of available memory, and network access to Apple and your selected notification services. Git is used for cloning and updates; a ZIP download can be deployed without Git. The container runs Linux, and Linux x86_64 has been verified. On Apple Silicon (arm64), the image builds and the automated tests pass; live Apple queries have not been verified there. Keep the Chromium sandbox enabled and use the supplied container permissions.
 
 ```sh
 git clone https://github.com/ChenshuXu/iphone-duo-monitor.git

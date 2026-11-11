@@ -52,6 +52,7 @@ applyLanguage();
 
 let state;
 let formVersion;
+let populatedSettings;
 let dirty = false;
 let received = 0;
 let offset = 0;
@@ -213,6 +214,7 @@ $('#discover').onclick = async (e) => {
 
 function populate(c) {
   formVersion = c.version;
+  populatedSettings = JSON.stringify(c);
 
   for (const [key, options] of Object.entries({
     color: c.options.colors,
@@ -260,6 +262,10 @@ function populate(c) {
 }
 
 function render(data, fresh = true) {
+  // The stream omits events when they have not changed since the previous push.
+  if (!data.events) {
+    data.events = state.events;
+  }
   state = data;
   if (fresh) {
     received = Date.now();
@@ -276,6 +282,8 @@ function render(data, fresh = true) {
   setText($('#last-attempt'), date(r.lastAttempt) || '尚未查询');
   setText($('#last-success'), date(r.lastComplete) || '尚未成功');
   setText($('#target'), `${c.zip} · ${c.stores.length} 家门店 · 第 ${c.version} 版`);
+  setText($('#history-retention'), `保留最近 ${data.retention.historyDays} 天 · 有货记录永久保留`);
+  setText($('#events-retention'), `保留 ${data.retention.eventDays} 天 · 有货相关永久保留`);
 
   $('#toggle').disabled = false;
   setText($('#toggle'), r.paused ? '恢复监控' : '暂停监控');
@@ -345,8 +353,10 @@ function render(data, fresh = true) {
 
   $('#test-bark').disabled = !c.barkConfigured;
   $('#test-irm').disabled = !c.irmEnabled;
-  $('#cleanup-irm').disabled =
-    !r.paused || !r.irm.pendingGroups || (!r.irm.legacyPaused && r.irm.notBefore > data.serverTime);
+  // Legacy recovery also restores a channel that has no groups left to clear.
+  const cleanupReady =
+    r.irm.legacyPaused || (r.irm.pendingGroups > 0 && !(r.irm.notBefore > data.serverTime));
+  $('#cleanup-irm').disabled = !r.paused || !cleanupReady;
   setText(
     $('#irm-description'),
     c.irmEnabled
@@ -356,8 +366,11 @@ function render(data, fresh = true) {
 
   renderEvents();
 
+  // Rebuilding the form on every push would close an open dropdown.
   if (!dirty) {
-    populate(c);
+    if (populatedSettings !== JSON.stringify(c)) {
+      populate(c);
+    }
   } else if (formVersion !== c.version) {
     setText(
       $('#save-message'),
@@ -404,7 +417,7 @@ async function loadHistory() {
     historyNext = data.nextCursor;
     setText(
       $('#history-coverage'),
-      `完整查询历史从 ${historyDate(data.historyStartedAt)} 开始，保留最近 ${data.retentionDays} 天，有货轮次永久保留。更早仅保留迁移时可恢复的最近一次结果。`,
+      `完整查询历史从 ${historyDate(data.historyStartedAt)} 开始，保留最近 ${data.retentionDays} 天，有货轮次永久保留。`,
     );
     setText($('#history-total'), data.summary.total.toLocaleString(language));
     setText($('#history-available'), data.summary.availableRounds.toLocaleString(language));

@@ -17,7 +17,7 @@
     附近门店: 'Nearby stores',
     库存按监控周期更新: 'Inventory updates on the monitoring schedule',
     查询历史: 'Query history',
-    '保留最近 60 天 · 有货记录永久保留': 'Last 60 days · Stock records kept permanently',
+    '保留最近 {days} 天 · 有货记录永久保留': 'Last {days} days · Stock records kept permanently',
     全部记录: 'All records',
     '正在读取历史记录…': 'Loading query history…',
     查询轮次: 'Query rounds',
@@ -88,7 +88,7 @@
     '首次保存即确认选定门店；恢复监控是独立操作。':
       'Saving confirms the selected stores. Resume monitoring when ready.',
     最近事件: 'Recent events',
-    '保留 30 天 · 有货相关永久保留': '30 days · Stock-related events kept permanently',
+    '保留 {days} 天 · 有货相关永久保留': '{days} days · Stock-related events kept permanently',
     事件类型: 'Event type',
     全部事件: 'All events',
     有货与提醒: 'Stock and alerts',
@@ -153,8 +153,8 @@
     '服务端已是第 {version} 版。当前编辑内容仍保留；重新载入后再保存。':
       'The server has version {version}. Your edits are retained; reload before saving.',
     '正在读取记录…': 'Loading records…',
-    '完整查询历史从 {time} 开始，保留最近 {days} 天，有货轮次永久保留。更早仅保留迁移时可恢复的最近一次结果。':
-      'Complete history starts at {time} and is retained for {days} days; rounds with stock are kept permanently. Older history includes only the latest recoverable snapshot.',
+    '完整查询历史从 {time} 开始，保留最近 {days} 天，有货轮次永久保留。':
+      'Complete history starts at {time} and is retained for {days} days; rounds with stock are kept permanently.',
     '{count} 次有货查询': '{count} queries with stock',
     '首次记录：{time}': 'First recorded: {time}',
     '最近记录：{time}': 'Last recorded: {time}',
@@ -296,8 +296,6 @@
       'Version {version} query ended after settings changed. Results kept in history only.',
     '第 {version} 版查询完成：{available} 家可取货，{valid} 家有效。':
       'Version {version} query complete: {available} available, {valid} valid stores.',
-    '查询失败：{error}，未知状态不是无货。':
-      'Query failed: {error}. Unknown does not mean unavailable.',
     '查询失败：{error}，库存待确认。': 'Query failed: {error}. Stock status unknown.',
     部分门店未知: 'Some stores are unknown',
     '服务未返回有效 JSON': 'The service did not return valid JSON',

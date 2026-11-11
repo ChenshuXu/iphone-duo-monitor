@@ -63,6 +63,7 @@ test('60-day retention preserves the boundary and prunes older results; 1/7/30/6
   record(store, ['unavailable'], now - 29 * DAY);
   record(store, ['unavailable'], now - 6 * DAY);
   record(store, ['unavailable'], now - DAY + 1000);
+  store.pruneHistory(now);
   assert.equal(store.history(new URLSearchParams(), now).total, 4);
   for (const [days, expected] of [
     [1, 1],
@@ -140,39 +141,21 @@ test('in-flight query is preserved as interrupted after restart', (t) => {
     reopened.close();
   }
 });
-test('migration recovers only the last complete snapshot once and leaves settings and credentials intact', (t) => {
+test('a database without a history start time begins history now without inventing records', (t) => {
   const { store, dir } = fixture(t);
-  const now = Date.now();
   delete store.value.historyStartedAt;
-  store.value.config.version = 4;
-  store.value.runtime = {
-    ...store.value.runtime,
-    phase: 'checking',
-    round: randomUUID(),
-    configVersion: 4,
-    lastAttempt: now - 5000,
-    lastComplete: now - 1000,
-    stores: DEFAULTS.stores.map((id) => ({
-      id,
-      name: STORES[id],
-      status: 'unavailable',
-      checkedAt: now - 1100,
-      lastValid: { status: 'unavailable', checkedAt: now - 1100 },
-    })),
-  };
+  store.value.runtime.round = randomUUID();
+  store.value.runtime.lastComplete = Date.now();
   store.commit();
-  for (let i = 0; i < 2; i++) {
-    const reopened = new Store(dir, store.secrets);
-    try {
-      const data = reopened.history();
-      assert.equal(data.total, 1);
-      assert.equal(data.items[0].source, 'snapshot');
-      assert.equal(data.items[0].config.version, 4);
-      assert.equal(reopened.secrets.barkKey, 'private_test_key');
-      assert.ok(!Object.hasOwn(data.items[0].stores[0], 'lastValid'));
-    } finally {
-      reopened.close();
-    }
+  const before = Date.now();
+  const reopened = new Store(dir, store.secrets);
+  try {
+    const data = reopened.history();
+    assert.equal(data.total, 0);
+    assert.ok(data.historyStartedAt >= before);
+    assert.equal(reopened.secrets.barkKey, 'private_test_key');
+  } finally {
+    reopened.close();
   }
 });
 test('every actual Monitor attempt is archived, including failed and superseded results, without changing notifications', async (t) => {

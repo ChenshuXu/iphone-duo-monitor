@@ -59,12 +59,6 @@ button.primary {
   color: #152316;
 }
 
-button.quiet {
-  border: 0;
-  background: none;
-  padding: 7px 10px;
-}
-
 input:not([type='checkbox']) {
   width: 100%;
   background: #101611;

@@ -1210,3 +1210,10 @@ test('Bark rate limit stops same-round pushes and manual tests, survives restart
   assert.equal(m.v.runtime.bark.state, 'accepted');
   assert.equal(m.v.runtime.bark.notBefore, 0);
 });
+
+test('a phone test during the channel cooldown is rejected as rate limited', async (t) => {
+  const { m } = fixture(t, undefined, async () => {}, phoneSecrets);
+  m.save({ ...DEFAULTS, irmEnabled: true });
+  m.v.runtime.irm.notBefore = Date.now() + 60000;
+  await assert.rejects(m.control('test-irm'), { status: 429 });
+});

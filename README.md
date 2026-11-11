@@ -35,7 +35,7 @@
 
 ## 1. Docker 部署
 
-需要 Docker Engine + Compose v2（或 Docker Desktop）、至少 2 GiB 可用内存，以及可访问 Apple 和所选通知服务的网络；Git 用于克隆和更新，ZIP 下载首次部署不需要 Git。容器内为 Linux，已验证 Linux x86_64；ARM64 / Apple Silicon 尚未验证。不要使用 `--privileged` 或关闭 Chromium 沙箱。
+需要 Docker Engine + Compose v2（或 Docker Desktop）、至少 2 GiB 可用内存，以及可访问 Apple 和所选通知服务的网络；Git 用于克隆和更新，ZIP 下载首次部署不需要 Git。容器内为 Linux，已验证 Linux x86_64；Apple Silicon（arm64）上的镜像构建与自动化测试已通过，真实 Apple 查询尚未验证。不要使用 `--privileged` 或关闭 Chromium 沙箱。
 
 ```sh
 git clone https://github.com/ChenshuXu/iphone-duo-monitor.git

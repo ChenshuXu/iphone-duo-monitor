@@ -155,7 +155,7 @@ function validate(input, current, secrets) {
   if (
     !Array.isArray(c.stores) ||
     !c.stores.length ||
-    c.stores.some((id) => !Object.hasOwn(c.catalog, id)) ||
+    c.stores.some((id) => typeof id !== 'string' || !Object.hasOwn(c.catalog, id)) ||
     new Set(c.stores).size !== c.stores.length
   ) {
     fail('请从门店目录中至少选择一家，且不能重复。');
@@ -414,23 +414,6 @@ class Store {
     }
     if (!this.value.historyStartedAt) {
       this.value.historyStartedAt = Date.now();
-      const r = this.value.runtime;
-      const c = this.value.config;
-      // Only the latest complete snapshot has enough evidence to recover per-store results.
-      if (
-        r.round &&
-        r.configVersion === c.version &&
-        r.lastComplete >= r.lastAttempt &&
-        r.stores.length &&
-        r.stores.every((s) => s.status !== 'UNKNOWN')
-      ) {
-        this.beginQuery(c, r.round, r.lastAttempt, 'snapshot');
-        this.finishQuery(
-          r.round,
-          { stores: r.stores, verification: r.verification },
-          r.lastComplete,
-        );
-      }
       this.commit();
     }
     for (const row of this.db
@@ -572,7 +555,6 @@ class Store {
     ) {
       fail('历史查询筛选条件无效。');
     }
-    this.pruneHistory(now);
     const where = ['q.started_at >= ?'];
     const args = [days === 'all' ? 0 : now - Number(days) * DAY];
     if (store) {
@@ -925,7 +907,7 @@ class Monitor {
             fail('电话尚未启用；等待 Grafana 配置。');
           }
           if (Date.now() < (r.irm.notBefore || 0)) {
-            fail('电话渠道仍在冷却或暂停。');
+            fail('电话渠道仍在冷却或暂停。', 429);
           }
           if (!(await this.cleanupIrm())) {
             fail('旧电话分组尚未清理。');
@@ -1323,6 +1305,8 @@ module.exports = {
   validateSecrets,
   inventoryStores,
   DEFAULTS,
+  HISTORY_DAYS,
+  EVENT_DAYS,
   Store,
   Monitor,
   validate,

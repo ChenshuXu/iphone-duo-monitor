@@ -42,7 +42,7 @@ docker compose ls
 
 - 没有 Docker：按 [Docker Engine 官方安装说明](https://docs.docker.com/engine/install/)安装 Linux Engine 和 Compose 插件；桌面系统按 [Docker Desktop 官方说明](https://docs.docker.com/desktop/)安装并启动，使用 Linux 容器。需要管理员操作或系统重启时，由用户完成后继续。
 - Docker 不可用：检查 daemon / Desktop、当前用户权限和 Docker context，连接用户指定的部署主机。
-- 资源与架构：至少预留 2 GiB 可用内存，并检查构建所需磁盘空间。已验证 Linux x86_64 Docker；ARM64 / Apple Silicon、Windows / NAS 的具体环境按本流程验收。
+- 资源与架构：至少预留 2 GiB 可用内存，并检查构建所需磁盘空间。已验证 Linux x86_64 Docker；Apple Silicon（arm64）已通过镜像构建与自动化测试，真实 Apple 查询以及 Windows / NAS 的具体环境按本流程验收。
 - 远程服务器：通过 SSH / 终端在目标目录 clone 仓库或传输源码，在目标机器配置 `.env`、构建和启动。
 - 下载 ZIP：解压后进入含 `compose.yaml`、`Dockerfile` 和 `seccomp_profile.json` 的目录即可，无需 Git。
 
