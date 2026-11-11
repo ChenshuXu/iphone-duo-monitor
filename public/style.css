@@ -59,12 +59,6 @@ button.primary {
   color: #152316;
 }
 
-button.quiet {
-  border: 0;
-  background: none;
-  padding: 7px 10px;
-}
-
 input:not([type='checkbox']) {
   width: 100%;
   background: #101611;
@@ -406,6 +400,30 @@ form .check {
 .events a {
   color: var(--green);
   font-size: 11px;
+}
+
+.event-filter {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
+.event-filter select {
+  display: block;
+  margin-top: 6px;
+}
+
+.events li.kept {
+  border-left: 2px solid var(--green);
+  padding-left: 10px;
+}
+
+.events-more {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding-top: 14px;
 }
 
 .toast {

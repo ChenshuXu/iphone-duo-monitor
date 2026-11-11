@@ -42,7 +42,7 @@ docker compose ls
 
 - 没有 Docker：按 [Docker Engine 官方安装说明](https://docs.docker.com/engine/install/)安装 Linux Engine 和 Compose 插件；桌面系统按 [Docker Desktop 官方说明](https://docs.docker.com/desktop/)安装并启动，使用 Linux 容器。需要管理员操作或系统重启时，由用户完成后继续。
 - Docker 不可用：检查 daemon / Desktop、当前用户权限和 Docker context，连接用户指定的部署主机。
-- 资源与架构：至少预留 2 GiB 可用内存，并检查构建所需磁盘空间。已验证 Linux x86_64 Docker；ARM64 / Apple Silicon、Windows / NAS 的具体环境按本流程验收。
+- 资源与架构：至少预留 2 GiB 可用内存，并检查构建所需磁盘空间。已验证 Linux x86_64 Docker；Apple Silicon（arm64）已通过镜像构建与自动化测试，真实 Apple 查询以及 Windows / NAS 的具体环境按本流程验收。
 - 远程服务器：通过 SSH / 终端在目标目录 clone 仓库或传输源码，在目标机器配置 `.env`、构建和启动。
 - 下载 ZIP：解压后进入含 `compose.yaml`、`Dockerfile` 和 `seccomp_profile.json` 的目录即可，无需 Git。
 
@@ -164,7 +164,8 @@ API 与管理页共用地址。宿主机调用时，URL 的 Host 与 `PUBLIC_ORI
 | `POST /api/discover` | JSON 包含字符串 `zip`、`color`、`capacity`、`carrier`；返回 `catalog` 和核对后的 `product`；本身不保存目录或设置 |
 | `PUT /api/settings` | 以刚读取的完整设置为底稿，合并本次目标、真实 `catalog`、选中 ID 数组 `stores` 和通知开关；携带原 `version`，保存成功后版本递增 |
 | `POST /api/control` | JSON 为 `{"action":"..."}`；支持 `pause`、`resume`、`query`、`test-bark`、`test-irm`、`cleanup-irm`；旧版恢复动作不用于首次配置 |
-| `GET /api/history` | 读取真实监控轮次，检查 outcome、config、stores、verification 和 diagnostics；发现门店不产生监控历史 |
+| `GET /api/history` | 读取真实监控轮次，检查 outcome、config、stores、verification 和 diagnostics；发现门店不产生监控历史；`days=all` 包含永久保留的有货轮次 |
+| `GET /api/event-log` | 分页读取事件；`type` 为空、`stock`、`notify`、`error` 或 `nonquery`，`before` 传上一页的 `nextCursor` |
 
 创建 `local/`，在 `local/target.json` 写入用户所选的四个字段，格式如下：
 

@@ -2,6 +2,7 @@ process.umask(0o077);
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
+const { randomUUID } = require('node:crypto');
 const {
   Store,
   Monitor,
@@ -9,6 +10,8 @@ const {
   COLORS,
   CAPACITIES,
   CARRIERS,
+  HISTORY_DAYS,
+  EVENT_DAYS,
   validateTarget,
   fail,
   post,
@@ -37,7 +40,6 @@ function settings() {
     ...store.value.config,
     barkConfigured: !!store.secrets.barkKey,
     irmConfigured: !!store.secrets.irmWebhook,
-    irmReady: !!store.secrets.irmWebhook,
     options: { colors: COLORS, capacities: CAPACITIES, carriers: CARRIERS },
   };
 }
@@ -48,6 +50,7 @@ function snapshot() {
     serverTime: Date.now(),
     product: productFor(store.value.config),
     config: settings(),
+    retention: { historyDays: HISTORY_DAYS, eventDays: EVENT_DAYS },
     runtime: {
       paused: r.paused,
       phase: r.phase,
@@ -84,8 +87,19 @@ function snapshot() {
   };
 }
 
+let lastEvents;
+
 function broadcast() {
-  const message = `data: ${JSON.stringify(snapshot())}\n\n`;
+  const data = snapshot();
+  const events = JSON.stringify(data.events);
+
+  // Pages keep their event list when a push omits it; new streams always receive the full list.
+  if (events === lastEvents) {
+    delete data.events;
+  }
+  lastEvents = events;
+
+  const message = `data: ${JSON.stringify(data)}\n\n`;
   for (const res of clients) {
     if (res.writableLength > 1024 * 1024) {
       res.destroy();
@@ -121,15 +135,16 @@ async function body(req) {
     }
     throw e;
   }
+  let value;
   try {
-    const value = JSON.parse(text);
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      fail('JSON 对象格式错误。');
-    }
-    return value;
+    value = JSON.parse(text);
   } catch {
     fail('JSON 格式错误。');
   }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    fail('JSON 对象格式错误。');
+  }
+  return value;
 }
 
 const assets = {
@@ -170,6 +185,9 @@ async function handler(req, res) {
     if (route === '/api/history' && req.method === 'GET') {
       return send(res, 200, store.history(url.searchParams));
     }
+    if (route === '/api/event-log' && req.method === 'GET') {
+      return send(res, 200, store.eventLog(url.searchParams));
+    }
     if (route === '/api/settings' && req.method === 'GET') {
       return send(res, 200, settings());
     }
@@ -186,7 +204,7 @@ async function handler(req, res) {
       let result;
       try {
         try {
-          result = await browser.collect(c, require('node:crypto').randomUUID(), true);
+          result = await browser.collect(c, randomUUID(), true);
         } catch (e) {
           store.value.runtime.notBefore = Math.max(Date.now() + 180000, e.retryAt || 0);
           fail(e.safeMessage || '门店读取失败，请稍后重试。', 502);
@@ -232,15 +250,12 @@ async function handler(req, res) {
     }
     const diagnostic = /^\/api\/diagnostics\/([a-f0-9-]{36})$/.exec(route);
     if (diagnostic && req.method === 'GET') {
-      if (!store.value.events.some((e) => e.diagnostic === diagnostic[1])) {
+      const file = path.join(dataDir, 'diagnostics', `${diagnostic[1]}.png`);
+      // An event can outlive its screenshot, for example after a partial restore.
+      if (!store.hasDiagnostic(diagnostic[1]) || !fs.existsSync(file)) {
         fail('诊断不存在。', 404);
       }
-      return send(
-        res,
-        200,
-        fs.readFileSync(path.join(dataDir, 'diagnostics', `${diagnostic[1]}.png`)),
-        'image/png',
-      );
+      return send(res, 200, fs.readFileSync(file), 'image/png');
     }
     if (assets[route] && req.method === 'GET') {
       const [file, type] = assets[route];

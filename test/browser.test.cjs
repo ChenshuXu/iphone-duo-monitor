@@ -376,7 +376,6 @@ test(
       irmEnabled: true,
       barkConfigured: true,
       irmConfigured: true,
-      irmReady: true,
       options: { colors: COLORS, capacities: CAPACITIES, carriers: CARRIERS },
     };
     const runtime = {
@@ -402,6 +401,7 @@ test(
             serverTime: Date.now(),
             config,
             product: productFor(config),
+            retention: { historyDays: 60, eventDays: 30 },
             runtime,
             events: [],
           },
@@ -484,6 +484,7 @@ test(
     assert.equal(await page.locator('#cleanup-irm').isEnabled(), false);
     runtime.irm.notBefore = Number.MAX_SAFE_INTEGER;
     runtime.irm.legacyPaused = true;
+    runtime.irm.pendingGroups = 0;
     await page.reload();
     await page.waitForFunction(() =>
       document.querySelector('#irm-at').textContent.includes('旧版遗留暂停'),
@@ -535,6 +536,7 @@ test(
       serverTime: Date.now(),
       config,
       product: productFor(config),
+      retention: { historyDays: 60, eventDays: 30 },
       runtime,
       events: [],
     });
@@ -704,6 +706,7 @@ test(
             serverTime: Date.now(),
             config,
             product: productFor(config),
+            retention: { historyDays: 60, eventDays: 30 },
             runtime,
             events: [{ at: now, message: '设置已保存，第 7 版。' }],
           },
@@ -826,6 +829,7 @@ test(
       serverTime: Date.now(),
       config,
       product: productFor(config),
+      retention: { historyDays: 60, eventDays: 30 },
       runtime: {
         paused: true,
         phase: 'paused',

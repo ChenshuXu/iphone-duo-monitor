@@ -71,7 +71,7 @@
         <section class="history" aria-labelledby="history-heading">
           <div class="section-title">
             <h2 id="history-heading">查询历史</h2>
-            <span class="muted">保留最近 60 天 · 自动更新</span>
+            <span id="history-retention" class="muted">保留最近 60 天 · 有货记录永久保留</span>
           </div>
           <p id="history-coverage" class="fine">正在读取历史记录…</p>
           <div class="history-stats">
@@ -101,6 +101,7 @@
                 时间范围
                 <select id="history-days">
                   <option value="60">最近 60 天</option>
+                  <option value="all">全部记录</option>
                   <option value="30">最近 30 天</option>
                   <option value="7">最近 7 天</option>
                   <option value="1">最近 24 小时</option>
@@ -292,9 +293,23 @@
           <section class="events">
             <div class="section-title">
               <h2>最近事件</h2>
-              <span class="muted">最多 200 条</span>
+              <span id="events-retention" class="muted">保留 30 天 · 有货相关永久保留</span>
             </div>
+            <label class="event-filter">
+              事件类型
+              <select id="event-filter">
+                <option value="">全部事件</option>
+                <option value="stock">有货与提醒</option>
+                <option value="notify">通知发送</option>
+                <option value="error">错误</option>
+                <option value="nonquery">隐藏普通查询</option>
+              </select>
+            </label>
             <ol id="events"></ol>
+            <div class="events-more">
+              <button id="events-more" type="button">加载更早事件</button>
+              <span id="events-message" class="fine" role="status"></span>
+            </div>
           </section>
         </div>
         <p id="operation-message" class="toast" role="status" hidden></p>

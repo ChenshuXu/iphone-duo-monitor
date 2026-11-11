@@ -12,5 +12,6 @@ monitor-backup*
 
 local/
 AGENTS.md
+CLAUDE.md
 
 compose.override.yaml

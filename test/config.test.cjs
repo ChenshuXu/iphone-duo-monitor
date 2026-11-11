@@ -56,6 +56,7 @@ test('every offered color, capacity and carrier produces a distinct Apple US var
     { catalog: {} },
     { catalog: { R001: 3 } },
     { stores: ['R999'] },
+    { stores: [['R001']] },
   ]) {
     assert.throws(() => validate({ ...CONFIG, ...change }, DEFAULTS, {}));
   }
